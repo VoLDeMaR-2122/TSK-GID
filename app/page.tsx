@@ -235,7 +235,7 @@ export default function GidUralPage() {
           <span className="w-1.5 h-1.5 rounded-full bg-[#0f0] shadow-[0_0_4px_#0f0]" />
           {state.selected ? (state.selected.type === "train" ? `Выбран поезд №${state.trains.find((t) => t.id === state.selected!.id)?.number}` : "Выбрана пометка") : "Готов"}
         </span>
-        <span>ГИД Урал-ВНИИЖТ · web · {state.trains.length} ниток · {state.stations.length} станций · дежурных: {adminList.length + dncList.length + dspList.length} · оповещений: {activeAlerts.length}</span>
+        <span>ГИД Урал-ВНИИЖТ · TSK · {state.trains.length} ниток · {state.stations.length} станций · дежурных: {adminList.length + dncList.length + dspList.length} · оповещений: {activeAlerts.length}</span>
       </div>
 
       <input ref={importRef} type="file" accept=".json" className="hidden" onChange={importJSON} />
