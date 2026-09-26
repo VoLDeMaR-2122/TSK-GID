@@ -148,7 +148,7 @@ export default function GidUralPage() {
         <span className="gid-sep">|</span>
         {mi("Новая нитка", "F2", openNew, can(role, "trains.manage"))}
         {mi("Станции", "F3", () => setStationOpen(true), can(role, "stations.manage"))}
-        {mi("Дежурство", "F4", () => setDutyOpen(role))}
+        {mi("Дежурство", "F4", () => setDutyOpen(role ?? null))}
         {mi("Пометка", "F5", openNewMark, can(role, "marks.manage"))}
         <span className="gid-sep">|</span>
         {mi("🛡 Панель", "F6", () => setAdminOpen(true), can(role, "admin.panel"))}
