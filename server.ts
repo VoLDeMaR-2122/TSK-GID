@@ -3,19 +3,35 @@ import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
 import { Pool } from "pg";
 
+// ================= КОНФИГУРАЦИЯ =================
 const DEV = process.env.NODE_ENV !== "production";
 const PORT = Number(process.env.PORT || 3000);
-const HOSTNAME = process.env.HOSTNAME || "0.0.0.0";
-const DATABASE_URL =
-  process.env.DATABASE_URL || "postgres://gid:gidpass@localhost:5432/gid";
+// ВАЖНО: В Docker контейнер всегда должен слушать 0.0.0.0, иначе Traefik/Nginx его не увидит
+const HOSTNAME = "0.0.0.0";
 
-const ALLOWED = (process.env.GID_ALLOWED_ORIGINS || "")
+// Настройки БД.
+// Если DATABASE_URL не задан явно, собираем из переменных или берем дефолты для compose.
+// Хост 'db' соответствует имени сервиса в docker-compose.yml
+const PG_USER = process.env.POSTGRES_USER || "gid";
+const PG_PASS = process.env.POSTGRES_PASSWORD || "gidpass";
+const PG_DB = process.env.POSTGRES_DB || "gid";
+const PG_HOST = process.env.DB_HOST || "db";
+const PG_PORT = process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432;
+
+const DATABASE_URL = process.env.DATABASE_URL ||
+  `postgresql://${PG_USER}:${PG_PASS}@${PG_HOST}:${PG_PORT}/${PG_DB}`;
+
+console.log(`[CONFIG] App will listen on ${HOSTNAME}:${PORT}`);
+console.log(`[CONFIG] DB Target: ${PG_HOST}:${PG_PORT} (User: ${PG_USER}, DB: ${PG_DB})`);
+
+const ALLOWED_ORIGINS = (process.env.GID_ALLOWED_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 
+// ================= ТИПЫ ДАННЫХ =================
 type UserMeta = {
   session: string;
   name: string;
@@ -25,118 +41,36 @@ type UserMeta = {
   dutyTime: string;
 };
 
-type Station = {
-  id: string;
-  name: string;
-  km: number;
-  paths: number;
-  code: string;
-};
-
-type Stop = {
-  stationId: string;
-  arr: string | null;
-  dep: string | null;
-  path: number;
-};
-
+type Station = { id: string; name: string; km: number; paths: number; code: string };
+type Stop = { stationId: string; arr: string | null; dep: string | null; path: number };
 type Train = {
-  id: string;
-  number: string;
-  category: string;
-  locoSeries?: string;
-  locoNum?: string;
-  driver?: string;
-  weight?: string;
-  length?: string;
-  cargo?: string;
-  naturka?: string;
-  index?: string;
-  note?: string;
-  stops: Stop[];
+  id: string; number: string; category: string;
+  locoSeries?: string; locoNum?: string; driver?: string; weight?: string; length?: string;
+  cargo?: string; naturka?: string; index?: string; note?: string; stops: Stop[];
 };
-
 type Mark = {
-  id: string;
-  type: string;
-  peregon: number;
-  start: string;
-  end: string;
-  color: string;
-  text?: string;
-  service?: string;
+  id: string; type: string; peregon: number; start: string; end: string;
+  color: string; text?: string; service?: string;
 };
-
 type Alert = {
-  id: string;
-  type: string;
-  text: string;
-  author: string;
-  createdAt: number;
-  active: boolean;
+  id: string; type: string; text: string; author: string; createdAt: number; active: boolean;
 };
 
-interface StationRow {
-  id: string;
-  name: string;
-  km: number;
-  paths: number;
-  code: string;
+// Интерфейсы для строк из Postgres (snake_case)
+interface DbStationRow { id: string; name: string; km: number; paths: number; code: string }
+interface DbTrainRow {
+  id: string; number: string; category: string;
+  loco_series: string | null; loco_num: string | null; driver: string | null;
+  weight: string | null; length: string | null; cargo: string | null;
+  naturka: string | null; idx: string | null; note: string | null;
 }
+interface DbStopRow { train_id: string; station_id: string; arr: string | null; dep: string | null; path: number }
+interface DbMarkRow { id: string; type: string; peregon: number; start: string; end: string; color: string; text: string | null; service: string | null }
+interface DbAlertRow { id: string; type: string; text: string; author: string; created_at: string | number; active: boolean }
+interface DbUserRow { session: string; name: string; role: string; area: string; on_duty: boolean; duty_time: string }
 
-interface TrainRow {
-  id: string;
-  number: string;
-  category: string;
-  loco_series: string | null;
-  loco_num: string | null;
-  driver: string | null;
-  weight: string | null;
-  length: string | null;
-  cargo: string | null;
-  naturka: string | null;
-  idx: string | null;
-  note: string | null;
-}
-
-interface StopRow {
-  train_id: string;
-  station_id: string;
-  arr: string | null;
-  dep: string | null;
-  path: number;
-}
-
-interface MarkRow {
-  id: string;
-  type: string;
-  peregon: number;
-  start: string;
-  end: string;
-  color: string;
-  text: string | null;
-  service: string | null;
-}
-
-interface UserRow {
-  session: string;
-  name: string;
-  role: string;
-  area: string;
-  on_duty: boolean;
-  duty_time: string;
-}
-
-interface AlertRow {
-  id: string;
-  type: string;
-  text: string;
-  author: string;
-  created_at: string | number;
-  active: boolean;
-}
-
-const SCHEMA = `
+// ================= СХЕМА БД =================
+const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
   session   TEXT PRIMARY KEY,
   name      TEXT NOT NULL,
@@ -201,72 +135,49 @@ CREATE TABLE IF NOT EXISTS alerts (
 );
 `;
 
-function normalizeUser(input: any): UserMeta {
-  return {
-    session: String(input.session || ""),
-    name: String(input.name || ""),
-    role: String(input.role || "dsp"),
-    area: String(input.area || ""),
-    onDuty: Boolean(input.onDuty),
-    dutyTime: String(input.dutyTime || ""),
-  };
-}
+// ================= УТИЛИТЫ ДЛЯ БД =================
 
-function normalizeAlert(input: any): Alert {
-  return {
-    id: String(input.id || ""),
-    type: String(input.type || "info"),
-    text: String(input.text || ""),
-    author: String(input.author || ""),
-    createdAt: Number(input.createdAt || Date.now()),
-    active: input.active !== false,
-  };
+async function waitForDb(retries = 20, delayMs = 2000): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const client = await pool.connect();
+      await client.query("SELECT 1");
+      client.release();
+      console.log("[DB] Connection established successfully.");
+      return;
+    } catch (err: any) {
+      console.warn(`[DB] Attempt ${i + 1}/${retries} failed: ${err.message}. Retrying in ${delayMs}ms...`);
+      if (i === retries - 1) throw err; // Последняя попытка - пробрасываем ошибку
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
 }
 
 async function loadState() {
-  const stationsRes = await pool.query(
-    "SELECT id, name, km, paths, code FROM stations ORDER BY ord, km"
-  );
+  const [stationsRes, trainsRes, marksRes, stopsRes] = await Promise.all([
+    pool.query<DbStationRow>("SELECT id, name, km, paths, code FROM stations ORDER BY ord, km"),
+    pool.query<DbTrainRow>("SELECT id, number, category, loco_series, loco_num, driver, weight, length, cargo, naturka, idx, note FROM trains"),
+    pool.query<DbMarkRow>("SELECT id, type, peregon, start, end, color, text, service FROM marks"),
+    pool.query<DbStopRow>("SELECT train_id, station_id, arr, dep, path FROM train_stops ORDER BY ord"),
+  ]);
 
-  const trainsRes = await pool.query(
-    `SELECT id, number, category, loco_series, loco_num, driver,
-            weight, length, cargo, naturka, idx, note
-     FROM trains`
-  );
-
-  const marksRes = await pool.query(
-    `SELECT id, type, peregon, start, end, color, text, service
-     FROM marks`
-  );
-
-  const stopsRes = await pool.query(
-    `SELECT train_id, station_id, arr, dep, path
-     FROM train_stops
-     ORDER BY ord`
-  );
-
+  // Группировка остановок по поездам
   const stopsByTrain = new Map<string, Stop[]>();
-
-  for (const r of stopsRes.rows as StopRow[]) {
-    const list = stopsByTrain.get(r.train_id) || [];
-    list.push({
+  for (const r of stopsRes.rows) {
+    if (!stopsByTrain.has(r.train_id)) stopsByTrain.set(r.train_id, []);
+    stopsByTrain.get(r.train_id)!.push({
       stationId: r.station_id,
       arr: r.arr,
       dep: r.dep,
       path: r.path,
     });
-    stopsByTrain.set(r.train_id, list);
   }
 
-  const stations: Station[] = (stationsRes.rows as StationRow[]).map((r) => ({
-    id: r.id,
-    name: r.name,
-    km: r.km,
-    paths: r.paths,
-    code: r.code,
+  const stations: Station[] = stationsRes.rows.map(r => ({
+    id: r.id, name: r.name, km: r.km, paths: r.paths, code: r.code
   }));
 
-  const trains: Train[] = (trainsRes.rows as TrainRow[]).map((r) => ({
+  const trains: Train[] = trainsRes.rows.map(r => ({
     id: r.id,
     number: r.number,
     category: r.category,
@@ -282,135 +193,75 @@ async function loadState() {
     stops: stopsByTrain.get(r.id) || [],
   }));
 
-  const marks: Mark[] = (marksRes.rows as MarkRow[]).map((r) => ({
-    id: r.id,
-    type: r.type,
-    peregon: r.peregon,
-    start: r.start,
-    end: r.end,
-    color: r.color,
-    text: r.text ?? undefined,
-    service: r.service ?? undefined,
+  const marks: Mark[] = marksRes.rows.map(r => ({
+    id: r.id, type: r.type, peregon: r.peregon, start: r.start, end: r.end,
+    color: r.color, text: r.text ?? undefined, service: r.service ?? undefined,
   }));
 
   return { stations, trains, marks };
 }
 
 async function loadAlerts(): Promise<Alert[]> {
-  const res = await pool.query(
-    `SELECT id, type, text, author, created_at, active
-     FROM alerts
-     ORDER BY created_at DESC`
-  );
-
-  return (res.rows as AlertRow[]).map((r) => ({
-    id: r.id,
-    type: r.type,
-    text: r.text,
-    author: r.author,
-    createdAt: Number(r.created_at),
-    active: r.active,
+  const res = await pool.query<DbAlertRow>("SELECT * FROM alerts ORDER BY created_at DESC");
+  return res.rows.map(r => ({
+    id: r.id, type: r.type, text: r.text, author: r.author,
+    createdAt: Number(r.created_at), active: r.active
   }));
 }
 
 async function loadUsersMeta(): Promise<Map<string, UserMeta>> {
-  const res = await pool.query(
-    `SELECT session, name, role, area, on_duty, duty_time
-     FROM users`
-  );
-
+  const res = await pool.query<DbUserRow>("SELECT * FROM users");
   const map = new Map<string, UserMeta>();
-
-  for (const r of res.rows as UserRow[]) {
+  for (const r of res.rows) {
     map.set(r.session, {
-      session: r.session,
-      name: r.name,
-      role: r.role,
-      area: r.area,
-      onDuty: r.on_duty,
-      dutyTime: r.duty_time,
+      session: r.session, name: r.name, role: r.role, area: r.area,
+      onDuty: r.on_duty, dutyTime: r.duty_time
     });
   }
-
   return map;
 }
 
-async function saveState(payload: {
-  stations: Station[];
-  trains: Train[];
-  marks: Mark[];
-}) {
+async function saveState(payload: { stations: Station[]; trains: Train[]; marks: Mark[] }) {
   const client = await pool.connect();
-
   try {
     await client.query("BEGIN");
 
+    // Очищаем таблицы данных (но не users/alerts)
     await client.query("DELETE FROM train_stops");
     await client.query("DELETE FROM trains");
     await client.query("DELETE FROM stations");
     await client.query("DELETE FROM marks");
 
+    // Сохраняем станции
     for (const [i, s] of payload.stations.entries()) {
       await client.query(
-        `INSERT INTO stations(id, name, km, paths, code, ord)
-         VALUES($1,$2,$3,$4,$5,$6)`,
+        "INSERT INTO stations(id, name, km, paths, code, ord) VALUES($1,$2,$3,$4,$5,$6)",
         [s.id, s.name, s.km, s.paths, s.code, i]
       );
     }
 
+    // Сохраняем поезда и остановки
     for (const t of payload.trains) {
       await client.query(
-        `INSERT INTO trains(
-          id, number, category, loco_series, loco_num, driver,
-          weight, length, cargo, naturka, idx, note
-        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-        [
-          t.id,
-          t.number,
-          t.category,
-          t.locoSeries ?? null,
-          t.locoNum ?? null,
-          t.driver ?? null,
-          t.weight ?? null,
-          t.length ?? null,
-          t.cargo ?? null,
-          t.naturka ?? null,
-          t.index ?? null,
-          t.note ?? null,
-        ]
+        `INSERT INTO trains(id, number, category, loco_series, loco_num, driver, weight, length, cargo, naturka, idx, note)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [t.id, t.number, t.category, t.locoSeries ?? null, t.locoNum ?? null, t.driver ?? null,
+         t.weight ?? null, t.length ?? null, t.cargo ?? null, t.naturka ?? null, t.index ?? null, t.note ?? null]
       );
 
       for (const [i, sp] of t.stops.entries()) {
         await client.query(
-          `INSERT INTO train_stops(id, train_id, station_id, arr, dep, path, ord)
-           VALUES($1,$2,$3,$4,$5,$6,$7)`,
-          [
-            `${t.id}_s${i}`,
-            t.id,
-            sp.stationId,
-            sp.arr ?? null,
-            sp.dep ?? null,
-            sp.path,
-            i,
-          ]
+          "INSERT INTO train_stops(id, train_id, station_id, arr, dep, path, ord) VALUES($1,$2,$3,$4,$5,$6,$7)",
+          [`${t.id}_s${i}`, t.id, sp.stationId, sp.arr ?? null, sp.dep ?? null, sp.path, i]
         );
       }
     }
 
+    // Сохраняем пометки
     for (const m of payload.marks) {
       await client.query(
-        `INSERT INTO marks(id, type, peregon, start, end, color, text, service)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [
-          m.id,
-          m.type,
-          m.peregon,
-          m.start,
-          m.end,
-          m.color,
-          m.text ?? null,
-          m.service ?? null,
-        ]
+        "INSERT INTO marks(id, type, peregon, start, end, color, text, service) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+        [m.id, m.type, m.peregon, m.start, m.end, m.color, m.text ?? null, m.service ?? null]
       );
     }
 
@@ -424,13 +275,12 @@ async function saveState(payload: {
 }
 
 async function upsertUserLogin(u: UserMeta) {
-  // При логине НЕ перезаписываем on_duty/duty_time, если пользователь уже есть в БД.
-  // Это позволяет сохранять статус дежурства при перезагрузке страницы.
+  // При логине обновляем только профильные данные, НЕ трогаем on_duty/duty_time,
+  // чтобы сохранить статус дежурства при перезагрузке страницы.
   await pool.query(
     `INSERT INTO users(session, name, role, area, on_duty, duty_time)
      VALUES($1,$2,$3,$4,$5,$6)
-     ON CONFLICT(session)
-     DO UPDATE SET
+     ON CONFLICT(session) DO UPDATE SET
        name = EXCLUDED.name,
        role = EXCLUDED.role,
        area = EXCLUDED.area`,
@@ -438,12 +288,8 @@ async function upsertUserLogin(u: UserMeta) {
   );
 }
 
-const USER_COLUMN: Record<string, string> = {
-  name: "name",
-  role: "role",
-  area: "area",
-  onDuty: "on_duty",
-  dutyTime: "duty_time",
+const USER_COL_MAP: Record<string, string> = {
+  name: "name", role: "role", area: "area", onDuty: "on_duty", dutyTime: "duty_time"
 };
 
 async function patchUser(session: string, patch: Partial<UserMeta>) {
@@ -452,27 +298,21 @@ async function patchUser(session: string, patch: Partial<UserMeta>) {
   let idx = 1;
 
   for (const key of Object.keys(patch) as (keyof UserMeta)[]) {
-    const col = USER_COLUMN[key];
+    const col = USER_COL_MAP[key];
     if (!col) continue;
-
     sets.push(`${col}=$${idx++}`);
     values.push(patch[key]);
   }
 
   if (!sets.length) return;
-
   values.push(session);
 
-  await pool.query(
-    `UPDATE users SET ${sets.join(", ")} WHERE session=$${idx}`,
-    values
-  );
+  await pool.query(`UPDATE users SET ${sets.join(", ")} WHERE session=$${idx}`, values);
 }
 
 async function addAlert(a: Alert) {
   await pool.query(
-    `INSERT INTO alerts(id, type, text, author, created_at, active)
-     VALUES($1,$2,$3,$4,$5,$6)`,
+    "INSERT INTO alerts(id, type, text, author, created_at, active) VALUES($1,$2,$3,$4,$5,$6)",
     [a.id, a.type, a.text, a.author, a.createdAt, a.active]
   );
 }
@@ -486,10 +326,10 @@ async function removeAlert(id: string) {
 }
 
 async function seedIfEmpty() {
-  const res = await pool.query("SELECT COUNT(*)::int AS c FROM stations");
-  const count = Number(res.rows[0]?.c || 0);
+  const res = await pool.query<{ c: number }>("SELECT COUNT(*)::int AS c FROM stations");
+  if ((res.rows[0]?.c || 0) > 0) return;
 
-  if (count > 0) return;
+  console.log("🌱 Seeding initial data...");
 
   const stations: Station[] = [
     { id: "s1", name: "Горький-Моск", km: 0, paths: 8, code: "26000" },
@@ -505,237 +345,236 @@ async function seedIfEmpty() {
 
   const trains: Train[] = [
     {
-      id: "t1",
-      number: "284А",
-      category: "passenger",
-      locoSeries: "ЧС7",
-      locoNum: "210",
-      driver: "Петров П.П.",
-      weight: "950",
-      length: "18",
-      cargo: "пассаж",
-      naturka: "1112221",
-      index: "2600-1111-1",
-      note: "",
+      id: "t1", number: "284А", category: "passenger",
+      locoSeries: "ЧС7", locoNum: "210", driver: "Петров П.П.",
+      weight: "950", length: "18", cargo: "пассаж", naturka: "1112221", index: "2600-1111-1", note: "",
       stops: [
         { stationId: "s1", arr: "08:00", dep: "08:05", path: 1 },
         { stationId: "s3", arr: "08:25", dep: "08:27", path: 2 },
         { stationId: "s5", arr: "08:45", dep: "08:47", path: 1 },
         { stationId: "s9", arr: "09:40", dep: null, path: 3 },
-      ],
+      ]
     },
     {
-      id: "t2",
-      number: "3401",
-      category: "freight",
-      locoSeries: "ВЛ10",
-      locoNum: "1234",
-      driver: "Иванов И.И.",
-      weight: "4500",
-      length: "71",
-      cargo: "уголь",
-      naturka: "3334441",
-      index: "2600-2222-3",
-      note: "Тяжеловес",
+      id: "t2", number: "3401", category: "freight",
+      locoSeries: "ВЛ10", locoNum: "1234", driver: "Иванов И.И.",
+      weight: "4500", length: "71", cargo: "уголь", naturka: "3334441", index: "2600-2222-3", note: "Тяжеловес",
       stops: [
         { stationId: "s1", arr: null, dep: "09:00", path: 4 },
         { stationId: "s3", arr: "09:30", dep: "09:40", path: 3 },
         { stationId: "s6", arr: "10:15", dep: "10:25", path: 2 },
         { stationId: "s9", arr: "11:00", dep: null, path: 5 },
-      ],
+      ]
     },
   ];
 
   await saveState({ stations, trains, marks: [] });
-  console.log("🌱 Посеяны стартовые станции и поезда");
+  console.log("✅ Seed completed.");
 }
 
+// ================= WEBSOCKET SERVER =================
 const wss = new WebSocketServer({ noServer: true });
+const liveSockets = new Map<string, WebSocket>(); // session -> socket
+const userCache = new Map<string, UserMeta>();    // session -> meta
 
-// session -> живой websocket
-const live = new Map<string, WebSocket>();
-
-// session -> мета пользователя
-const meta = new Map<string, UserMeta>();
-
-function sendTo(sock: WebSocket | undefined, m: unknown) {
+function sendTo(sock: WebSocket | undefined, msg: object) {
   if (sock && sock.readyState === WebSocket.OPEN) {
-    sock.send(JSON.stringify(m));
+    sock.send(JSON.stringify(msg));
   }
 }
 
-function broadcast(m: unknown) {
-  const data = JSON.stringify(m);
-
-  for (const sock of live.values()) {
+function broadcast(msg: object) {
+  const data = JSON.stringify(msg);
+  for (const sock of liveSockets.values()) {
     if (sock.readyState === WebSocket.OPEN) {
       sock.send(data);
     }
   }
 }
 
-async function presencePayload(): Promise<UserMeta[]> {
+async function getPresenceList(): Promise<UserMeta[]> {
   const users: UserMeta[] = [];
-
-  for (const session of live.keys()) {
-    const u = meta.get(session);
+  for (const session of liveSockets.keys()) {
+    const u = userCache.get(session);
     if (u) users.push(u);
   }
-
   return users;
 }
 
 async function broadcastPresence() {
-  broadcast({
-    kind: "presence",
-    users: await presencePayload(),
-  });
+  broadcast({ kind: "presence", users: await getPresenceList() });
 }
 
 async function broadcastState() {
-  broadcast({
-    kind: "state",
-    state: await loadState(),
-  });
+  broadcast({ kind: "state", state: await loadState() });
 }
 
 async function broadcastAlerts() {
-  broadcast({
-    kind: "alerts",
-    alerts: await loadAlerts(),
-  });
+  broadcast({ kind: "alerts", alerts: await loadAlerts() });
 }
 
-wss.on("connection", async (sock, req) => {
+wss.on("connection", async (socket, req) => {
   const url = new URL(req.url || "/", "http://localhost");
-  let mySession =
-    url.searchParams.get("session") ||
-    `anon-${Math.random().toString(36).slice(2)}`;
+  let currentSession = url.searchParams.get("session") || `anon-${Math.random().toString(36).slice(2)}`;
 
-  sendTo(sock, { kind: "hello", clientId: mySession });
+  // Отправляем приветствие и начальные данные
+  sendTo(socket, { kind: "hello", clientId: currentSession });
 
   try {
-    sendTo(sock, { kind: "state", state: await loadState() });
-    sendTo(sock, { kind: "alerts", alerts: await loadAlerts() });
-    sendTo(sock, { kind: "presence", users: await presencePayload() });
+    const initialState = await loadState();
+    const initialAlerts = await loadAlerts();
+    const initialPresence = await getPresenceList();
+
+    sendTo(socket, { kind: "state", state: initialState });
+    sendTo(socket, { kind: "alerts", alerts: initialAlerts });
+    sendTo(socket, { kind: "presence", users: initialPresence });
   } catch (e) {
-    console.error("Initial payload error", e);
+    console.error("Error sending initial payload:", e);
   }
 
-  sock.on("message", async (data) => {
-    let m: any;
+  socket.on("message", async (data) => {
+    let msg: any;
+    try {
+      msg = JSON.parse(String(data));
+    } catch { return; }
 
     try {
-      m = JSON.parse(String(data));
-    } catch {
-      return;
-    }
-
-    try {
-      switch (m.kind) {
+      switch (msg.kind) {
         case "login": {
-          const u = normalizeUser(m.user);
+          const u: UserMeta = {
+            session: String(msg.user.session),
+            name: String(msg.user.name),
+            role: String(msg.user.role),
+            area: String(msg.user.area || ""),
+            onDuty: Boolean(msg.user.onDuty),
+            dutyTime: String(msg.user.dutyTime || "")
+          };
+
           if (!u.session) return;
 
-          mySession = u.session;
-          live.set(u.session, sock);
-          meta.set(u.session, u);
+          currentSession = u.session;
+          liveSockets.set(u.session, socket);
+          userCache.set(u.session, u);
 
           await upsertUserLogin(u);
 
-          const fresh = (await loadUsersMeta()).get(u.session);
-          if (fresh) meta.set(u.session, fresh);
+          // Обновляем кэш из БД на случай, если там были изменения от других клиентов
+          const freshMap = await loadUsersMeta();
+          const freshUser = freshMap.get(u.session);
+          if (freshUser) userCache.set(u.session, freshUser);
 
           await broadcastPresence();
           break;
         }
 
         case "logout": {
-          if (live.get(mySession) === sock) {
-            live.delete(mySession);
+          if (liveSockets.get(currentSession) === socket) {
+            liveSockets.delete(currentSession);
           }
-
           await broadcastPresence();
           break;
         }
 
         case "userPatch": {
-          const session = String(m.session || "");
-          if (!session) return;
+          const targetSession = String(msg.session || "");
+          if (!targetSession) return;
 
-          await patchUser(session, m.patch as Partial<UserMeta>);
+          await patchUser(targetSession, msg.patch as Partial<UserMeta>);
 
-          const fresh = (await loadUsersMeta()).get(session);
-          if (fresh) meta.set(session, fresh);
+          const freshMap = await loadUsersMeta();
+          const freshUser = freshMap.get(targetSession);
+          if (freshUser) userCache.set(targetSession, freshUser);
 
           await broadcastPresence();
           break;
         }
 
         case "state": {
-          await saveState(m.state);
+          await saveState(msg.state);
           await broadcastState();
           break;
         }
 
         case "alertAdd": {
-          await addAlert(normalizeAlert(m.alert));
+          const a: Alert = {
+            id: String(msg.alert.id),
+            type: String(msg.alert.type),
+            text: String(msg.alert.text),
+            author: String(msg.alert.author),
+            createdAt: Number(msg.alert.createdAt),
+            active: msg.alert.active !== false
+          };
+          await addAlert(a);
           await broadcastAlerts();
           break;
         }
 
         case "alertToggle": {
-          await toggleAlert(String(m.id));
+          await toggleAlert(String(msg.id));
           await broadcastAlerts();
           break;
         }
 
         case "alertRemove": {
-          await removeAlert(String(m.id));
+          await removeAlert(String(msg.id));
           await broadcastAlerts();
           break;
         }
       }
     } catch (e) {
-      console.error("WS handler error", e);
+      console.error("WS Handler Error:", e);
     }
   });
 
-  sock.on("close", async () => {
-    if (live.get(mySession) === sock) {
-      live.delete(mySession);
+  socket.on("close", async () => {
+    if (liveSockets.get(currentSession) === socket) {
+      liveSockets.delete(currentSession);
     }
-
     await broadcastPresence();
   });
 });
 
+// ================= HTTP SERVER & STARTUP =================
 const app = next({ dev: DEV });
 const handle = app.getRequestHandler();
 
-app
-  .prepare()
-  .then(async () => {
-    await pool.query(SCHEMA);
+app.prepare().then(async () => {
+  try {
+    // 1. Ждем базу
+    await waitForDb();
+
+    // 2. Создаем схему
+    await pool.query(SCHEMA_SQL);
+
+    // 3. Сидируем данные, если пусто
     await seedIfEmpty();
 
-    // Прогреваем мету из БД
-    for (const [session, u] of await loadUsersMeta()) {
-      meta.set(session, u);
+    // 4. Прогреваем кэш пользователей
+    const allUsers = await loadUsersMeta();
+    for (const [sess, u] of allUsers) {
+      userCache.set(sess, u);
     }
 
+    // 5. Запускаем HTTP сервер
     const server = http.createServer((req, res) => {
       handle(req, res);
     });
 
+    // 6. Обрабатываем WebSocket Upgrade
     server.on("upgrade", (req, socket, head) => {
       const { pathname } = new URL(req.url || "/", "http://localhost");
 
-      if (pathname !== "/ws") return;
+      if (pathname !== "/ws") {
+        // Не наш путь - разрушаем соединение, чтобы Next.js мог обработать свои апгрейды (HMR etc)
+        // Но так как мы используем кастомный сервер, лучше просто игнорировать или делегировать
+        // Для простоты демо: закрываем нецелевые соединения
+        socket.destroy();
+        return;
+      }
 
       const origin = req.headers.origin;
-
-      if (ALLOWED.length && origin && !ALLOWED.includes(origin)) {
+      if (ALLOWED_ORIGINS.length && origin && !ALLOWED_ORIGINS.includes(origin)) {
+        console.warn(`[SECURITY] Rejected WS connection from origin: ${origin}`);
         socket.destroy();
         return;
       }
@@ -746,12 +585,16 @@ app
     });
 
     server.listen(PORT, HOSTNAME, () => {
-      console.log(
-        `🚂 ГИД Урал-ВНИИЖТ готов: http://${HOSTNAME}:${PORT}  (WS: /ws)`
-      );
+      console.log(`\n🚂 ГИД Урал-ВНИИЖТ запущен!`);
+      console.log(`   HTTP: http://${HOSTNAME}:${PORT}`);
+      console.log(`   WS:   ws://${HOSTNAME}:${PORT}/ws\n`);
     });
-  })
-  .catch((e) => {
-    console.error(e);
+
+  } catch (error) {
+    console.error("\n💥 FATAL ERROR DURING STARTUP:", error);
     process.exit(1);
-  });
+  }
+}).catch((err) => {
+  console.error("Next.js prepare failed:", err);
+  process.exit(1);
+});

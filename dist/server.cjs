@@ -27,11 +27,18 @@ var import_ws = require("ws");
 var import_pg = require("pg");
 const DEV = process.env.NODE_ENV !== "production";
 const PORT = Number(process.env.PORT || 3e3);
-const HOSTNAME = process.env.HOSTNAME || "0.0.0.0";
-const DATABASE_URL = process.env.DATABASE_URL || "postgres://gid:gidpass@localhost:5432/gid";
-const ALLOWED = (process.env.GID_ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
+const HOSTNAME = "0.0.0.0";
+const PG_USER = process.env.POSTGRES_USER || "gid";
+const PG_PASS = process.env.POSTGRES_PASSWORD || "gidpass";
+const PG_DB = process.env.POSTGRES_DB || "gid";
+const PG_HOST = process.env.DB_HOST || "db";
+const PG_PORT = process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432;
+const DATABASE_URL = process.env.DATABASE_URL || `postgresql://${PG_USER}:${PG_PASS}@${PG_HOST}:${PG_PORT}/${PG_DB}`;
+console.log(`[CONFIG] App will listen on ${HOSTNAME}:${PORT}`);
+console.log(`[CONFIG] DB Target: ${PG_HOST}:${PG_PORT} (User: ${PG_USER}, DB: ${PG_DB})`);
+const ALLOWED_ORIGINS = (process.env.GID_ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
 const pool = new import_pg.Pool({ connectionString: DATABASE_URL });
-const SCHEMA = `
+const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS users (
   session   TEXT PRIMARY KEY,
   name      TEXT NOT NULL,
@@ -95,54 +102,37 @@ CREATE TABLE IF NOT EXISTS alerts (
   active BOOLEAN NOT NULL DEFAULT true
 );
 `;
-function normalizeUser(input) {
-  return {
-    session: String(input.session || ""),
-    name: String(input.name || ""),
-    role: String(input.role || "dsp"),
-    area: String(input.area || ""),
-    onDuty: Boolean(input.onDuty),
-    dutyTime: String(input.dutyTime || "")
-  };
-}
-function normalizeAlert(input) {
-  return {
-    id: String(input.id || ""),
-    type: String(input.type || "info"),
-    text: String(input.text || ""),
-    author: String(input.author || ""),
-    createdAt: Number(input.createdAt || Date.now()),
-    active: input.active !== false
-  };
+async function waitForDb(retries = 20, delayMs = 2e3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const client = await pool.connect();
+      await client.query("SELECT 1");
+      client.release();
+      console.log("[DB] Connection established successfully.");
+      return;
+    } catch (err) {
+      console.warn(`[DB] Attempt ${i + 1}/${retries} failed: ${err.message}. Retrying in ${delayMs}ms...`);
+      if (i === retries - 1) throw err;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
 }
 async function loadState() {
-  const stationsRes = await pool.query(
-    "SELECT id, name, km, paths, code FROM stations ORDER BY ord, km"
-  );
-  const trainsRes = await pool.query(
-    `SELECT id, number, category, loco_series, loco_num, driver,
-            weight, length, cargo, naturka, idx, note
-     FROM trains`
-  );
-  const marksRes = await pool.query(
-    `SELECT id, type, peregon, start, end, color, text, service
-     FROM marks`
-  );
-  const stopsRes = await pool.query(
-    `SELECT train_id, station_id, arr, dep, path
-     FROM train_stops
-     ORDER BY ord`
-  );
+  const [stationsRes, trainsRes, marksRes, stopsRes] = await Promise.all([
+    pool.query("SELECT id, name, km, paths, code FROM stations ORDER BY ord, km"),
+    pool.query("SELECT id, number, category, loco_series, loco_num, driver, weight, length, cargo, naturka, idx, note FROM trains"),
+    pool.query("SELECT id, type, peregon, start, end, color, text, service FROM marks"),
+    pool.query("SELECT train_id, station_id, arr, dep, path FROM train_stops ORDER BY ord")
+  ]);
   const stopsByTrain = /* @__PURE__ */ new Map();
   for (const r of stopsRes.rows) {
-    const list = stopsByTrain.get(r.train_id) || [];
-    list.push({
+    if (!stopsByTrain.has(r.train_id)) stopsByTrain.set(r.train_id, []);
+    stopsByTrain.get(r.train_id).push({
       stationId: r.station_id,
       arr: r.arr,
       dep: r.dep,
       path: r.path
     });
-    stopsByTrain.set(r.train_id, list);
   }
   const stations = stationsRes.rows.map((r) => ({
     id: r.id,
@@ -179,11 +169,7 @@ async function loadState() {
   return { stations, trains, marks };
 }
 async function loadAlerts() {
-  const res = await pool.query(
-    `SELECT id, type, text, author, created_at, active
-     FROM alerts
-     ORDER BY created_at DESC`
-  );
+  const res = await pool.query("SELECT * FROM alerts ORDER BY created_at DESC");
   return res.rows.map((r) => ({
     id: r.id,
     type: r.type,
@@ -194,10 +180,7 @@ async function loadAlerts() {
   }));
 }
 async function loadUsersMeta() {
-  const res = await pool.query(
-    `SELECT session, name, role, area, on_duty, duty_time
-     FROM users`
-  );
+  const res = await pool.query("SELECT * FROM users");
   const map = /* @__PURE__ */ new Map();
   for (const r of res.rows) {
     map.set(r.session, {
@@ -221,17 +204,14 @@ async function saveState(payload) {
     await client.query("DELETE FROM marks");
     for (const [i, s] of payload.stations.entries()) {
       await client.query(
-        `INSERT INTO stations(id, name, km, paths, code, ord)
-         VALUES($1,$2,$3,$4,$5,$6)`,
+        "INSERT INTO stations(id, name, km, paths, code, ord) VALUES($1,$2,$3,$4,$5,$6)",
         [s.id, s.name, s.km, s.paths, s.code, i]
       );
     }
     for (const t of payload.trains) {
       await client.query(
-        `INSERT INTO trains(
-          id, number, category, loco_series, loco_num, driver,
-          weight, length, cargo, naturka, idx, note
-        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        `INSERT INTO trains(id, number, category, loco_series, loco_num, driver, weight, length, cargo, naturka, idx, note)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
           t.id,
           t.number,
@@ -249,34 +229,15 @@ async function saveState(payload) {
       );
       for (const [i, sp] of t.stops.entries()) {
         await client.query(
-          `INSERT INTO train_stops(id, train_id, station_id, arr, dep, path, ord)
-           VALUES($1,$2,$3,$4,$5,$6,$7)`,
-          [
-            `${t.id}_s${i}`,
-            t.id,
-            sp.stationId,
-            sp.arr ?? null,
-            sp.dep ?? null,
-            sp.path,
-            i
-          ]
+          "INSERT INTO train_stops(id, train_id, station_id, arr, dep, path, ord) VALUES($1,$2,$3,$4,$5,$6,$7)",
+          [`${t.id}_s${i}`, t.id, sp.stationId, sp.arr ?? null, sp.dep ?? null, sp.path, i]
         );
       }
     }
     for (const m of payload.marks) {
       await client.query(
-        `INSERT INTO marks(id, type, peregon, start, end, color, text, service)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [
-          m.id,
-          m.type,
-          m.peregon,
-          m.start,
-          m.end,
-          m.color,
-          m.text ?? null,
-          m.service ?? null
-        ]
+        "INSERT INTO marks(id, type, peregon, start, end, color, text, service) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+        [m.id, m.type, m.peregon, m.start, m.end, m.color, m.text ?? null, m.service ?? null]
       );
     }
     await client.query("COMMIT");
@@ -291,15 +252,14 @@ async function upsertUserLogin(u) {
   await pool.query(
     `INSERT INTO users(session, name, role, area, on_duty, duty_time)
      VALUES($1,$2,$3,$4,$5,$6)
-     ON CONFLICT(session)
-     DO UPDATE SET
+     ON CONFLICT(session) DO UPDATE SET
        name = EXCLUDED.name,
        role = EXCLUDED.role,
        area = EXCLUDED.area`,
     [u.session, u.name, u.role, u.area, u.onDuty, u.dutyTime]
   );
 }
-const USER_COLUMN = {
+const USER_COL_MAP = {
   name: "name",
   role: "role",
   area: "area",
@@ -311,22 +271,18 @@ async function patchUser(session, patch) {
   const values = [];
   let idx = 1;
   for (const key of Object.keys(patch)) {
-    const col = USER_COLUMN[key];
+    const col = USER_COL_MAP[key];
     if (!col) continue;
     sets.push(`${col}=$${idx++}`);
     values.push(patch[key]);
   }
   if (!sets.length) return;
   values.push(session);
-  await pool.query(
-    `UPDATE users SET ${sets.join(", ")} WHERE session=$${idx}`,
-    values
-  );
+  await pool.query(`UPDATE users SET ${sets.join(", ")} WHERE session=$${idx}`, values);
 }
 async function addAlert(a) {
   await pool.query(
-    `INSERT INTO alerts(id, type, text, author, created_at, active)
-     VALUES($1,$2,$3,$4,$5,$6)`,
+    "INSERT INTO alerts(id, type, text, author, created_at, active) VALUES($1,$2,$3,$4,$5,$6)",
     [a.id, a.type, a.text, a.author, a.createdAt, a.active]
   );
 }
@@ -338,8 +294,8 @@ async function removeAlert(id) {
 }
 async function seedIfEmpty() {
   const res = await pool.query("SELECT COUNT(*)::int AS c FROM stations");
-  const count = Number(res.rows[0]?.c || 0);
-  if (count > 0) return;
+  if ((res.rows[0]?.c || 0) > 0) return;
+  console.log("\u{1F331} Seeding initial data...");
   const stations = [
     { id: "s1", name: "\u0413\u043E\u0440\u044C\u043A\u0438\u0439-\u041C\u043E\u0441\u043A", km: 0, paths: 8, code: "26000" },
     { id: "s2", name: "\u041A\u0440. \u0423\u0437\u0435\u043B", km: 15, paths: 4, code: "26010" },
@@ -394,126 +350,137 @@ async function seedIfEmpty() {
     }
   ];
   await saveState({ stations, trains, marks: [] });
-  console.log("\u{1F331} \u041F\u043E\u0441\u0435\u044F\u043D\u044B \u0441\u0442\u0430\u0440\u0442\u043E\u0432\u044B\u0435 \u0441\u0442\u0430\u043D\u0446\u0438\u0438 \u0438 \u043F\u043E\u0435\u0437\u0434\u0430");
+  console.log("\u2705 Seed completed.");
 }
 const wss = new import_ws.WebSocketServer({ noServer: true });
-const live = /* @__PURE__ */ new Map();
-const meta = /* @__PURE__ */ new Map();
-function sendTo(sock, m) {
+const liveSockets = /* @__PURE__ */ new Map();
+const userCache = /* @__PURE__ */ new Map();
+function sendTo(sock, msg) {
   if (sock && sock.readyState === import_ws.WebSocket.OPEN) {
-    sock.send(JSON.stringify(m));
+    sock.send(JSON.stringify(msg));
   }
 }
-function broadcast(m) {
-  const data = JSON.stringify(m);
-  for (const sock of live.values()) {
+function broadcast(msg) {
+  const data = JSON.stringify(msg);
+  for (const sock of liveSockets.values()) {
     if (sock.readyState === import_ws.WebSocket.OPEN) {
       sock.send(data);
     }
   }
 }
-async function presencePayload() {
+async function getPresenceList() {
   const users = [];
-  for (const session of live.keys()) {
-    const u = meta.get(session);
+  for (const session of liveSockets.keys()) {
+    const u = userCache.get(session);
     if (u) users.push(u);
   }
   return users;
 }
 async function broadcastPresence() {
-  broadcast({
-    kind: "presence",
-    users: await presencePayload()
-  });
+  broadcast({ kind: "presence", users: await getPresenceList() });
 }
 async function broadcastState() {
-  broadcast({
-    kind: "state",
-    state: await loadState()
-  });
+  broadcast({ kind: "state", state: await loadState() });
 }
 async function broadcastAlerts() {
-  broadcast({
-    kind: "alerts",
-    alerts: await loadAlerts()
-  });
+  broadcast({ kind: "alerts", alerts: await loadAlerts() });
 }
-wss.on("connection", async (sock, req) => {
+wss.on("connection", async (socket, req) => {
   const url = new URL(req.url || "/", "http://localhost");
-  let mySession = url.searchParams.get("session") || `anon-${Math.random().toString(36).slice(2)}`;
-  sendTo(sock, { kind: "hello", clientId: mySession });
+  let currentSession = url.searchParams.get("session") || `anon-${Math.random().toString(36).slice(2)}`;
+  sendTo(socket, { kind: "hello", clientId: currentSession });
   try {
-    sendTo(sock, { kind: "state", state: await loadState() });
-    sendTo(sock, { kind: "alerts", alerts: await loadAlerts() });
-    sendTo(sock, { kind: "presence", users: await presencePayload() });
+    const initialState = await loadState();
+    const initialAlerts = await loadAlerts();
+    const initialPresence = await getPresenceList();
+    sendTo(socket, { kind: "state", state: initialState });
+    sendTo(socket, { kind: "alerts", alerts: initialAlerts });
+    sendTo(socket, { kind: "presence", users: initialPresence });
   } catch (e) {
-    console.error("Initial payload error", e);
+    console.error("Error sending initial payload:", e);
   }
-  sock.on("message", async (data) => {
-    let m;
+  socket.on("message", async (data) => {
+    let msg;
     try {
-      m = JSON.parse(String(data));
+      msg = JSON.parse(String(data));
     } catch {
       return;
     }
     try {
-      switch (m.kind) {
+      switch (msg.kind) {
         case "login": {
-          const u = normalizeUser(m.user);
+          const u = {
+            session: String(msg.user.session),
+            name: String(msg.user.name),
+            role: String(msg.user.role),
+            area: String(msg.user.area || ""),
+            onDuty: Boolean(msg.user.onDuty),
+            dutyTime: String(msg.user.dutyTime || "")
+          };
           if (!u.session) return;
-          mySession = u.session;
-          live.set(u.session, sock);
-          meta.set(u.session, u);
+          currentSession = u.session;
+          liveSockets.set(u.session, socket);
+          userCache.set(u.session, u);
           await upsertUserLogin(u);
-          const fresh = (await loadUsersMeta()).get(u.session);
-          if (fresh) meta.set(u.session, fresh);
+          const freshMap = await loadUsersMeta();
+          const freshUser = freshMap.get(u.session);
+          if (freshUser) userCache.set(u.session, freshUser);
           await broadcastPresence();
           break;
         }
         case "logout": {
-          if (live.get(mySession) === sock) {
-            live.delete(mySession);
+          if (liveSockets.get(currentSession) === socket) {
+            liveSockets.delete(currentSession);
           }
           await broadcastPresence();
           break;
         }
         case "userPatch": {
-          const session = String(m.session || "");
-          if (!session) return;
-          await patchUser(session, m.patch);
-          const fresh = (await loadUsersMeta()).get(session);
-          if (fresh) meta.set(session, fresh);
+          const targetSession = String(msg.session || "");
+          if (!targetSession) return;
+          await patchUser(targetSession, msg.patch);
+          const freshMap = await loadUsersMeta();
+          const freshUser = freshMap.get(targetSession);
+          if (freshUser) userCache.set(targetSession, freshUser);
           await broadcastPresence();
           break;
         }
         case "state": {
-          await saveState(m.state);
+          await saveState(msg.state);
           await broadcastState();
           break;
         }
         case "alertAdd": {
-          await addAlert(normalizeAlert(m.alert));
+          const a = {
+            id: String(msg.alert.id),
+            type: String(msg.alert.type),
+            text: String(msg.alert.text),
+            author: String(msg.alert.author),
+            createdAt: Number(msg.alert.createdAt),
+            active: msg.alert.active !== false
+          };
+          await addAlert(a);
           await broadcastAlerts();
           break;
         }
         case "alertToggle": {
-          await toggleAlert(String(m.id));
+          await toggleAlert(String(msg.id));
           await broadcastAlerts();
           break;
         }
         case "alertRemove": {
-          await removeAlert(String(m.id));
+          await removeAlert(String(msg.id));
           await broadcastAlerts();
           break;
         }
       }
     } catch (e) {
-      console.error("WS handler error", e);
+      console.error("WS Handler Error:", e);
     }
   });
-  sock.on("close", async () => {
-    if (live.get(mySession) === sock) {
-      live.delete(mySession);
+  socket.on("close", async () => {
+    if (liveSockets.get(currentSession) === socket) {
+      liveSockets.delete(currentSession);
     }
     await broadcastPresence();
   });
@@ -521,32 +488,45 @@ wss.on("connection", async (sock, req) => {
 const app = (0, import_next.default)({ dev: DEV });
 const handle = app.getRequestHandler();
 app.prepare().then(async () => {
-  await pool.query(SCHEMA);
-  await seedIfEmpty();
-  for (const [session, u] of await loadUsersMeta()) {
-    meta.set(session, u);
-  }
-  const server = import_http.default.createServer((req, res) => {
-    handle(req, res);
-  });
-  server.on("upgrade", (req, socket, head) => {
-    const { pathname } = new URL(req.url || "/", "http://localhost");
-    if (pathname !== "/ws") return;
-    const origin = req.headers.origin;
-    if (ALLOWED.length && origin && !ALLOWED.includes(origin)) {
-      socket.destroy();
-      return;
+  try {
+    await waitForDb();
+    await pool.query(SCHEMA_SQL);
+    await seedIfEmpty();
+    const allUsers = await loadUsersMeta();
+    for (const [sess, u] of allUsers) {
+      userCache.set(sess, u);
     }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws, req);
+    const server = import_http.default.createServer((req, res) => {
+      handle(req, res);
     });
-  });
-  server.listen(PORT, HOSTNAME, () => {
-    console.log(
-      `\u{1F682} \u0413\u0418\u0414 \u0423\u0440\u0430\u043B-\u0412\u041D\u0418\u0418\u0416\u0422 \u0433\u043E\u0442\u043E\u0432: http://${HOSTNAME}:${PORT}  (WS: /ws)`
-    );
-  });
-}).catch((e) => {
-  console.error(e);
+    server.on("upgrade", (req, socket, head) => {
+      const { pathname } = new URL(req.url || "/", "http://localhost");
+      if (pathname !== "/ws") {
+        socket.destroy();
+        return;
+      }
+      const origin = req.headers.origin;
+      if (ALLOWED_ORIGINS.length && origin && !ALLOWED_ORIGINS.includes(origin)) {
+        console.warn(`[SECURITY] Rejected WS connection from origin: ${origin}`);
+        socket.destroy();
+        return;
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req);
+      });
+    });
+    server.listen(PORT, HOSTNAME, () => {
+      console.log(`
+\u{1F682} \u0413\u0418\u0414 \u0423\u0440\u0430\u043B-\u0412\u041D\u0418\u0418\u0416\u0422 \u0437\u0430\u043F\u0443\u0449\u0435\u043D!`);
+      console.log(`   HTTP: http://${HOSTNAME}:${PORT}`);
+      console.log(`   WS:   ws://${HOSTNAME}:${PORT}/ws
+`);
+    });
+  } catch (error) {
+    console.error("\n\u{1F4A5} FATAL ERROR DURING STARTUP:", error);
+    process.exit(1);
+  }
+}).catch((err) => {
+  console.error("Next.js prepare failed:", err);
   process.exit(1);
 });
