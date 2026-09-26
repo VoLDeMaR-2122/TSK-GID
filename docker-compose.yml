@@ -1,8 +1,35 @@
 services:
-  gid-ural:
-    build: .
+  db:
+    image: postgres:16-alpine
     restart: unless-stopped
-    ports:
-      - "3000:3000"
     environment:
-      - NODE_ENV=production
+      POSTGRES_USER: ${POSTGRES_USER:-gid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gidpass}
+      POSTGRES_DB: ${POSTGRES_DB:-gid}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gid} -d ${POSTGRES_DB:-gid}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-gid}:${POSTGRES_PASSWORD:-gidpass}@db:5432/${POSTGRES_DB:-gid}
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      # через запятую; пусто = принимать любой Origin (демо). Для прода укажи свой домен.
+      GID_ALLOWED_ORIGINS: ${GID_ALLOWED_ORIGINS:-}
+    expose:
+      - "3000"
+
+volumes:
+  pgdata:

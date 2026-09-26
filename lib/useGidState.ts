@@ -2,60 +2,42 @@
 import { useState, useEffect, useRef } from "react";
 import { GidState } from "./types";
 import { INITIAL_STATE } from "./initialData";
+import { ws } from "./ws";
 
-const KEY = "gid_ural_state";
+const LOCAL_KEY = "gid_local_view";
+
+function loadLocal(): Pick<GidState, "view" | "selected" | "showNumbers" | "showTimeMarks"> {
+  const def = { view: INITIAL_STATE.view, selected: null as GidState["selected"], showNumbers: true, showTimeMarks: true };
+  try { return { ...def, ...JSON.parse(localStorage.getItem(LOCAL_KEY) || "{}") }; } catch { return def; }
+}
 
 export function useGidState() {
-  const [state, setState] = useState<GidState>(INITIAL_STATE);
-  const lastTs = useRef(0);
+  const [state, setState] = useState<GidState>(() => ({ ...INITIAL_STATE, ...loadLocal() }));
+  const ready = useRef(false);
 
-  // Загрузка
+  // входящий снапшот от сервера -> мержим только серверные поля
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        lastTs.current = parsed._ts || 0;
-        setState((prev) => ({ ...prev, ...parsed, selected: null }));
-      }
-    } catch {}
+    ws.init();
+    const off = ws.on("state", (m: any) => {
+      ready.current = true;
+      setState((prev) => ({ ...prev, stations: m.state.stations, trains: m.state.trains, marks: m.state.marks }));
+    });
+    return off;
   }, []);
 
-  // Сохранение с меткой времени
+  // исходящая синхронизация: при изменении серверных полей шлём снапшот
   useEffect(() => {
-    const ts = Date.now();
-    lastTs.current = ts;
-    localStorage.setItem(
-      KEY,
-      JSON.stringify({ ...state, selected: null, _ts: ts })
-    );
+    if (!ready.current) return;
+    ws.send({ kind: "state", state: { stations: state.stations, trains: state.trains, marks: state.marks } });
   }, [state.stations, state.trains, state.marks]);
 
-  // Приём изменений из других вкладок (реальное время)
+  // локальные поля — в localStorage (приватные, не синхронизируются)
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== KEY || !e.newValue) return;
-      try {
-        const parsed = JSON.parse(e.newValue);
-        if (parsed._ts && parsed._ts > lastTs.current) {
-          lastTs.current = parsed._ts;
-          // Обновляем только данные, локальный вид/выделение не трогаем
-          setState((prev) => ({
-            ...prev,
-            stations: parsed.stations ?? prev.stations,
-            trains: parsed.trains ?? prev.trains,
-            marks: parsed.marks ?? prev.marks,
-          }));
-        }
-      } catch {}
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+    localStorage.setItem(LOCAL_KEY, JSON.stringify({ view: state.view, selected: state.selected, showNumbers: state.showNumbers, showTimeMarks: state.showTimeMarks }));
+  }, [state.view, state.selected, state.showNumbers, state.showTimeMarks]);
 
   const resetData = () => {
-    localStorage.removeItem(KEY);
-    setState(INITIAL_STATE);
+    setState((prev) => ({ ...INITIAL_STATE, view: prev.view, selected: null, showNumbers: prev.showNumbers, showTimeMarks: prev.showTimeMarks }));
   };
 
   return { state, setState, resetData };

@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Role, ADMIN_PASSWORD } from "./permissions";
+import { ws } from "./ws";
 
 export interface OnlineUser {
   session: string;
@@ -9,18 +10,10 @@ export interface OnlineUser {
   area: string;
   onDuty: boolean;
   dutyTime: string;
-  lastSeen: number;
+  lastSeen?: number;
 }
 
-const USERS_KEY = "gid_users";
 const ME_KEY = "gid_user";
-
-function readUsers(): Record<string, OnlineUser> {
-  try { return JSON.parse(localStorage.getItem(USERS_KEY) || "{}"); } catch { return {}; }
-}
-function writeUsers(u: Record<string, OnlineUser>) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(u));
-}
 
 export function useOnlineUsers() {
   const [me, setMe] = useState<OnlineUser | null>(null);
@@ -29,87 +22,60 @@ export function useOnlineUsers() {
   meRef.current = me;
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(ME_KEY);
-      if (saved) setMe(JSON.parse(saved));
-    } catch {}
+    try { const s = localStorage.getItem(ME_KEY); if (s) setMe(JSON.parse(s)); } catch {}
   }, []);
 
-  const refresh = useCallback(() => {
-    const all = readUsers();
-    const now = Date.now();
-    const active = Object.values(all).filter((u) => now - u.lastSeen < 60000);
-    const order: Record<Role, number> = { admin: 0, dnc: 1, dsp: 2 };
-    active.sort((a, b) => (order[a.role] ?? 3) - (order[b.role] ?? 3));
-    setUsers(active);
+  // входящее присутствие; если среди них есть мой session — синхронизируем me
+  useEffect(() => {
+    ws.init();
+    const off = ws.on("presence", (m: any) => {
+      const list: OnlineUser[] = (m.users || []).map((u: any) => ({ ...u, lastSeen: Date.now() }));
+      setUsers(list);
+      const mine = meRef.current && list.find((u) => u.session === meRef.current!.session);
+      if (mine) {
+        setMe((prev) => {
+          if (!prev) return prev;
+          const next = { ...prev, role: mine.role, area: mine.area, onDuty: mine.onDuty, dutyTime: mine.dutyTime };
+          localStorage.setItem(ME_KEY, JSON.stringify(next));
+          return next;
+        });
+      }
+    });
+    return off;
   }, []);
 
-  useEffect(() => {
-    refresh();
-    const onStorage = (e: StorageEvent) => { if (e.key === USERS_KEY) refresh(); };
-    window.addEventListener("storage", onStorage);
-    const iv = setInterval(refresh, 5000);
-    return () => { window.removeEventListener("storage", onStorage); clearInterval(iv); };
-  }, [refresh]);
-
-  useEffect(() => {
-    if (!me) return;
-    const beat = () => {
-      const all = readUsers();
-      all[me.session] = { ...me, lastSeen: Date.now() };
-      writeUsers(all);
-      refresh();
-    };
-    beat();
-    const iv = setInterval(beat, 10000);
-    const onUnload = () => { const all = readUsers(); delete all[me.session]; writeUsers(all); };
-    window.addEventListener("beforeunload", onUnload);
-    return () => { clearInterval(iv); window.removeEventListener("beforeunload", onUnload); };
-  }, [me, refresh]);
-
-  const login = (name: string, role: Role, area: string, password: string): string | null => {
+  const login = useCallback((name: string, role: Role, area: string, password: string): string | null => {
     if (role === "admin" && password !== ADMIN_PASSWORD) return "Неверный пароль администратора";
     const user: OnlineUser = {
       session: "u" + Date.now() + Math.random().toString(36).slice(2, 6),
       name, role, area, onDuty: false, dutyTime: "", lastSeen: Date.now(),
     };
     localStorage.setItem(ME_KEY, JSON.stringify(user));
-    const all = readUsers();
-    all[user.session] = user;
-    writeUsers(all);
     setMe(user);
-    refresh();
+    ws.send({ kind: "login", user: { session: user.session, name, role, area, onDuty: false, dutyTime: "" } });
     return null;
-  };
+  }, []);
 
-  const logout = () => {
-    if (me) { const all = readUsers(); delete all[me.session]; writeUsers(all); }
+  const logout = useCallback(() => {
+    const cur = meRef.current;
+    if (cur) ws.send({ kind: "logout", session: cur.session });
     localStorage.removeItem(ME_KEY);
     setMe(null);
-    refresh();
-  };
+  }, []);
 
-  const updateMe = (patch: Partial<OnlineUser>) => {
+  const updateMe = useCallback((patch: Partial<OnlineUser>) => {
     setMe((prev) => {
       if (!prev) return prev;
       const next = { ...prev, ...patch };
       localStorage.setItem(ME_KEY, JSON.stringify(next));
-      const all = readUsers();
-      all[next.session] = { ...next, lastSeen: Date.now() };
-      writeUsers(all);
-      refresh();
+      ws.send({ kind: "userPatch", session: next.session, patch: { name: next.name, role: next.role, area: next.area, onDuty: next.onDuty, dutyTime: next.dutyTime } });
       return next;
     });
-  };
+  }, []);
 
-  const updateUser = (session: string, patch: Partial<OnlineUser>) => {
-    const all = readUsers();
-    if (!all[session]) return;
-    all[session] = { ...all[session], ...patch, lastSeen: Date.now() };
-    writeUsers(all);
-    if (me && me.session === session) { setMe(all[session]); localStorage.setItem(ME_KEY, JSON.stringify(all[session])); }
-    refresh();
-  };
+  const updateUser = useCallback((session: string, patch: Partial<OnlineUser>) => {
+    ws.send({ kind: "userPatch", session, patch });
+  }, []);
 
   return { me, users, login, logout, updateMe, updateUser };
 }
