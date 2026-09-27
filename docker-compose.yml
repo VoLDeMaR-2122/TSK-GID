@@ -14,24 +14,26 @@ services:
       timeout: 5s
       retries: 10
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      PORT: 3000
-      HOSTNAME: 0.0.0.0
-      DB_HOST: db
-      POSTGRES_USER: gid
-      POSTGRES_PASSWORD: gidpass
-      POSTGRES_DB: gid
-    ports:
-      - "3001:3000"
+    app:
+      build:
+        context: .
+        dockerfile: Dockerfile
+      restart: unless-stopped
+      depends_on:
+        db:
+          condition: service_healthy
+      environment:
+        NODE_ENV: production
+        PORT: 3000
+        HOSTNAME: 0.0.0.0
+        DB_HOST: db
+        POSTGRES_USER: gid
+        POSTGRES_PASSWORD: gidpass
+        POSTGRES_DB: gid
+      # УДАЛЯЕМ строку ports: - "3000:3000"
+      # Вместо этого используем expose, чтобы только внутренняя сеть видела порт
+      expose:
+        - "3000"
 
 volumes:
   pgdata:
