@@ -1,7 +1,6 @@
 // 1. ЗАГРУЖАЕМ ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ ИЗ ФАЙЛА .env ИЛИ .env.local
 import { config } from "dotenv";
-config({ path: ".env.local" }); // Явно указываем путь к локальному файлу
-// Если файла .env.local нет, можно использовать просто config() — он возьмет .env по умолчанию
+config({ path: ".env.local" });
 
 import http from "http";
 import next from "next";
@@ -11,17 +10,11 @@ import { Pool } from "pg";
 // ================= КОНФИГУРАЦИЯ =================
 const DEV = process.env.NODE_ENV !== "production";
 const PORT = Number(process.env.PORT || 3000);
-// ВАЖНО: В Docker контейнер всегда должен слушать 0.0.0.0, иначе Traefik/Nginx его не увидит
 const HOSTNAME = "0.0.0.0";
 
-// Настройки БД.
-// Если DATABASE_URL не задан явно, собираем из переменных или берем дефолты для compose.
-// Хост 'db' соответствует имени сервиса в docker-compose.yml
 const PG_USER = process.env.POSTGRES_USER || "gid";
 const PG_PASS = process.env.POSTGRES_PASSWORD || "gidpass";
 const PG_DB = process.env.POSTGRES_DB || "gid";
-// ИСПРАВЛЕНО: Дефолт теперь localhost для локальной разработки!
-// В Docker переменная DB_HOST=db переопределит это значение.
 const PG_HOST = process.env.DB_HOST || "localhost";
 const PG_PORT = process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432;
 
@@ -72,7 +65,6 @@ interface DbTrainRow {
   naturka: string | null; idx: string | null; note: string | null;
 }
 interface DbStopRow { train_id: string; station_id: string; arr: string | null; dep: string | null; path: number }
-// ИСПРАВЛЕНО: end -> end_time в интерфейсе, но мапится обратно в end
 interface DbMarkRow { id: string; type: string; peregon: number; start: string; end_time: string; color: string; text: string | null; service: string | null }
 interface DbAlertRow { id: string; type: string; text: string; author: string; created_at: string | number; active: boolean }
 interface DbUserRow { session: string; name: string; role: string; area: string; on_duty: boolean; duty_time: string }
@@ -122,7 +114,6 @@ CREATE TABLE IF NOT EXISTS train_stops (
   ord INT NOT NULL DEFAULT 0
 );
 
--- ИСПРАВЛЕНО: end -> end_time
 CREATE TABLE IF NOT EXISTS marks (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL,
@@ -156,22 +147,22 @@ async function waitForDb(retries = 20, delayMs = 2000): Promise<void> {
       return;
     } catch (err: any) {
       console.warn(`[DB] Attempt ${i + 1}/${retries} failed: ${err.message}. Retrying in ${delayMs}ms...`);
-      if (i === retries - 1) throw err; // Последняя попытка - пробрасываем ошибку
+      if (i === retries - 1) throw err;
       await new Promise(r => setTimeout(r, delayMs));
     }
   }
 }
 
 async function loadState() {
+  // 1. Выполняем параллельные запросы к БД
   const [stationsRes, trainsRes, marksRes, stopsRes] = await Promise.all([
     pool.query<DbStationRow>("SELECT id, name, km, paths, code FROM stations ORDER BY ord, km"),
     pool.query<DbTrainRow>("SELECT id, number, category, loco_series, loco_num, driver, weight, length, cargo, naturka, idx, note FROM trains"),
-    // ИСПРАВЛЕНО: end_time as end, чтобы TS-код работал без изменений
-    pool.query<DbMarkRow>("SELECT id, type, peregon, start, end_time as end, color, text, service FROM marks"),
+    pool.query<DbMarkRow>("SELECT id, type, peregon, start, end_time, color, text, service FROM marks"),
     pool.query<DbStopRow>("SELECT train_id, station_id, arr, dep, path FROM train_stops ORDER BY ord"),
   ]);
 
-  // Группировка остановок по поездам
+  // 2. Группируем остановки по поездам
   const stopsByTrain = new Map<string, Stop[]>();
   for (const r of stopsRes.rows) {
     if (!stopsByTrain.has(r.train_id)) stopsByTrain.set(r.train_id, []);
@@ -183,10 +174,16 @@ async function loadState() {
     });
   }
 
+  // 3. Маппим станции
   const stations: Station[] = stationsRes.rows.map(r => ({
-    id: r.id, name: r.name, km: r.km, paths: r.paths, code: r.code
+    id: r.id,
+    name: r.name,
+    km: r.km,
+    paths: r.paths,
+    code: r.code
   }));
 
+  // 4. Маппим поезда
   const trains: Train[] = trainsRes.rows.map(r => ({
     id: r.id,
     number: r.number,
@@ -203,9 +200,16 @@ async function loadState() {
     stops: stopsByTrain.get(r.id) || [],
   }));
 
+  // 5. Маппим пометки (ИСПРАВЛЕНО: используем r.end_time из SQL)
   const marks: Mark[] = marksRes.rows.map(r => ({
-    id: r.id, type: r.type, peregon: r.peregon, start: r.start, end: r.end, // Берем из алиаса
-    color: r.color, text: r.text ?? undefined, service: r.service ?? undefined,
+    id: r.id,
+    type: r.type,
+    peregon: r.peregon,
+    start: r.start,
+    end: r.end_time, // <-- Правильное маппинг поля из БД в модель TS
+    color: r.color,
+    text: r.text ?? undefined,
+    service: r.service ?? undefined,
   }));
 
   return { stations, trains, marks };
@@ -269,7 +273,6 @@ async function saveState(payload: { stations: Station[]; trains: Train[]; marks:
 
     // Сохраняем пометки
     for (const m of payload.marks) {
-      // ИСПРАВЛЕНО: end -> end_time в SQL
       await client.query(
         "INSERT INTO marks(id, type, peregon, start, end_time, color, text, service) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
         [m.id, m.type, m.peregon, m.start, m.end, m.color, m.text ?? null, m.service ?? null]
@@ -286,8 +289,6 @@ async function saveState(payload: { stations: Station[]; trains: Train[]; marks:
 }
 
 async function upsertUserLogin(u: UserMeta) {
-  // При логине обновляем только профильные данные, НЕ трогаем on_duty/duty_time,
-  // чтобы сохранить статус дежурства при перезагрузке страницы.
   await pool.query(
     `INSERT INTO users(session, name, role, area, on_duty, duty_time)
      VALUES($1,$2,$3,$4,$5,$6)
@@ -385,8 +386,8 @@ async function seedIfEmpty() {
 
 // ================= WEBSOCKET SERVER =================
 const wss = new WebSocketServer({ noServer: true });
-const liveSockets = new Map<string, WebSocket>(); // session -> socket
-const userCache = new Map<string, UserMeta>();    // session -> meta
+const liveSockets = new Map<string, WebSocket>();
+const userCache = new Map<string, UserMeta>();
 
 function sendTo(sock: WebSocket | undefined, msg: object) {
   if (sock && sock.readyState === WebSocket.OPEN) {
@@ -428,7 +429,6 @@ wss.on("connection", async (socket, req) => {
   const url = new URL(req.url || "/", "http://localhost");
   let currentSession = url.searchParams.get("session") || `anon-${Math.random().toString(36).slice(2)}`;
 
-  // Отправляем приветствие и начальные данные
   sendTo(socket, { kind: "hello", clientId: currentSession });
 
   try {
@@ -469,7 +469,6 @@ wss.on("connection", async (socket, req) => {
 
           await upsertUserLogin(u);
 
-          // Обновляем кэш из БД на случай, если там были изменения от других клиентов
           const freshMap = await loadUsersMeta();
           const freshUser = freshMap.get(u.session);
           if (freshUser) userCache.set(u.session, freshUser);
@@ -551,40 +550,28 @@ const handle = app.getRequestHandler();
 
 app.prepare().then(async () => {
   try {
-    // 1. Ждем базу
     await waitForDb();
-
-    // 2. Создаем схему
     await pool.query(SCHEMA_SQL);
-
-    // 3. Сидируем данные, если пусто
     await seedIfEmpty();
 
-    // 4. Прогреваем кэш пользователей
     const allUsers = await loadUsersMeta();
     for (const [sess, u] of allUsers) {
       userCache.set(sess, u);
     }
 
-    // 5. Запускаем HTTP сервер
     const server = http.createServer((req, res) => {
       handle(req, res);
     });
 
-    // 6. Обрабатываем WebSocket Upgrade
     server.on("upgrade", (req, socket, head) => {
       const { pathname } = new URL(req.url || "/", "http://localhost");
 
-      // *** ГЛАВНОЕ ИСПРАВЛЕНИЕ ***
-      // Если это запрос от Next.js (HMR, Dev Tools), мы НЕ должны его перехватывать.
-      // Пусть стандартный обработчик Next.js сам разберется с этим соединением.
       if (pathname.startsWith("/_next/")) {
         return;
       }
 
-      // Обработка ТОЛЬКО нашего бизнес-сокета (/ws)
       if (pathname !== "/ws") {
-        socket.destroy(); // Другие неизвестные пути всё же блокируем
+        socket.destroy();
         return;
       }
 

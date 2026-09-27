@@ -21,17 +21,19 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var import_dotenv = require("dotenv");
 var import_http = __toESM(require("http"));
 var import_next = __toESM(require("next"));
 var import_ws = require("ws");
 var import_pg = require("pg");
+(0, import_dotenv.config)({ path: ".env.local" });
 const DEV = process.env.NODE_ENV !== "production";
 const PORT = Number(process.env.PORT || 3e3);
 const HOSTNAME = "0.0.0.0";
 const PG_USER = process.env.POSTGRES_USER || "gid";
 const PG_PASS = process.env.POSTGRES_PASSWORD || "gidpass";
 const PG_DB = process.env.POSTGRES_DB || "gid";
-const PG_HOST = process.env.DB_HOST || "db";
+const PG_HOST = process.env.DB_HOST || "localhost";
 const PG_PORT = process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432;
 const DATABASE_URL = process.env.DATABASE_URL || `postgresql://${PG_USER}:${PG_PASS}@${PG_HOST}:${PG_PORT}/${PG_DB}`;
 console.log(`[CONFIG] App will listen on ${HOSTNAME}:${PORT}`);
@@ -87,7 +89,7 @@ CREATE TABLE IF NOT EXISTS marks (
   type TEXT NOT NULL,
   peregon INT NOT NULL DEFAULT 0,
   start TEXT NOT NULL,
-  end TEXT NOT NULL,
+  end_time TEXT NOT NULL,
   color TEXT NOT NULL,
   text TEXT,
   service TEXT
@@ -121,7 +123,7 @@ async function loadState() {
   const [stationsRes, trainsRes, marksRes, stopsRes] = await Promise.all([
     pool.query("SELECT id, name, km, paths, code FROM stations ORDER BY ord, km"),
     pool.query("SELECT id, number, category, loco_series, loco_num, driver, weight, length, cargo, naturka, idx, note FROM trains"),
-    pool.query("SELECT id, type, peregon, start, end, color, text, service FROM marks"),
+    pool.query("SELECT id, type, peregon, start, end_time, color, text, service FROM marks"),
     pool.query("SELECT train_id, station_id, arr, dep, path FROM train_stops ORDER BY ord")
   ]);
   const stopsByTrain = /* @__PURE__ */ new Map();
@@ -161,7 +163,8 @@ async function loadState() {
     type: r.type,
     peregon: r.peregon,
     start: r.start,
-    end: r.end,
+    end: r.end_time,
+    // <-- Правильное маппинг поля из БД в модель TS
     color: r.color,
     text: r.text ?? void 0,
     service: r.service ?? void 0
@@ -236,7 +239,7 @@ async function saveState(payload) {
     }
     for (const m of payload.marks) {
       await client.query(
-        "INSERT INTO marks(id, type, peregon, start, end, color, text, service) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+        "INSERT INTO marks(id, type, peregon, start, end_time, color, text, service) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
         [m.id, m.type, m.peregon, m.start, m.end, m.color, m.text ?? null, m.service ?? null]
       );
     }
@@ -501,6 +504,9 @@ app.prepare().then(async () => {
     });
     server.on("upgrade", (req, socket, head) => {
       const { pathname } = new URL(req.url || "/", "http://localhost");
+      if (pathname.startsWith("/_next/")) {
+        return;
+      }
       if (pathname !== "/ws") {
         socket.destroy();
         return;
