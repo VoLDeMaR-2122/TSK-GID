@@ -114,12 +114,13 @@ CREATE TABLE IF NOT EXISTS train_stops (
   ord INT NOT NULL DEFAULT 0
 );
 
+-- ИСПРАВЛЕНО: end -> end_time
 CREATE TABLE IF NOT EXISTS marks (
   id TEXT PRIMARY KEY,
   type TEXT NOT NULL,
   peregon INT NOT NULL DEFAULT 0,
   start TEXT NOT NULL,
-  end TEXT NOT NULL,
+  end_time TEXT NOT NULL,
   color TEXT NOT NULL,
   text TEXT,
   service TEXT
