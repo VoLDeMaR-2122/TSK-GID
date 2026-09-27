@@ -62,7 +62,6 @@ export default function LoginOverlay({ onLogin }: Props) {
 
           {err && <div className="text-[#f55] text-[10px] mb-2">⚠ {err}</div>}
           <button className="gid-btn gid-btn-primary w-full !py-2.5 !text-[13px] font-bold mt-1" onClick={submit}>▶ Войти в систему</button>
-          <div className="text-[#3a3a3a] text-[9px] text-center mt-3">Демо-пароль админа: admin123</div>
         </div>
       </div>
     </div>
