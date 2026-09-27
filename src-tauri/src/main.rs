@@ -3,23 +3,21 @@
 use tauri::Manager;
 
 fn main() {
-    // Определяем целевой URL
+    // Определяем URL в зависимости от режима сборки
     #[cfg(debug_assertions)]
-    let url = "http://localhost:3000"; // Для разработки
+    let url = "http://localhost:3000"; // Режим разработки: грузим локальный сервер
 
     #[cfg(not(debug_assertions))]
-    let url = "https://gid.tsk-community.online"; // Для продакшена
+    let url = "https://gid.tsk-community.online"; // Режим продакшена: грузим боевой сайт
 
     tauri::Builder::default()
         .setup(move |app| {
-            // Создаем главное окно
             let window = app.get_webview_window("main").unwrap();
 
-            // Загружаем внешний URL вместо локальных файлов
-            // Это позволяет использовать твою авторизацию Discord, WS и БД без переноса кода в Rust
-            window
-                .eval(&format!("window.location.href = '{}';", url))
-                .ok();
+            // Принудительно загружаем нужный URL
+            // Важно: используем eval, чтобы обойти CSP, если он строгий
+            let js_code = format!("window.location.href = '{}';", url);
+            window.eval(&js_code).ok();
 
             Ok(())
         })
