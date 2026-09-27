@@ -31,7 +31,7 @@ services:
       POSTGRES_PASSWORD: gidpass
       POSTGRES_DB: gid
     ports:
-      - "3000:3000"
+      - "3001:3000"
 
 volumes:
   pgdata:
