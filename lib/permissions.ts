@@ -1,6 +1,6 @@
 export type Role = "admin" | "dnc" | "dsp";
 
-export const ADMIN_PASSWORD = "vold2122";
+export const ADMIN_PASSWORD = "dcs_rulit";
 
 // Порядок важен: старший → младший
 export const ROLE_NAMES: Record<Role, string> = {
