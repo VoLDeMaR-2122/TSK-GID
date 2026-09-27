@@ -1,3 +1,8 @@
+// 1. ЗАГРУЖАЕМ ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ ИЗ ФАЙЛА .env ИЛИ .env.local
+import { config } from "dotenv";
+config({ path: ".env.local" }); // Явно указываем путь к локальному файлу
+// Если файла .env.local нет, можно использовать просто config() — он возьмет .env по умолчанию
+
 import http from "http";
 import next from "next";
 import { WebSocketServer, WebSocket } from "ws";
@@ -15,7 +20,9 @@ const HOSTNAME = "0.0.0.0";
 const PG_USER = process.env.POSTGRES_USER || "gid";
 const PG_PASS = process.env.POSTGRES_PASSWORD || "gidpass";
 const PG_DB = process.env.POSTGRES_DB || "gid";
-const PG_HOST = process.env.DB_HOST || "db";
+// ИСПРАВЛЕНО: Дефолт теперь localhost для локальной разработки!
+// В Docker переменная DB_HOST=db переопределит это значение.
+const PG_HOST = process.env.DB_HOST || "localhost";
 const PG_PORT = process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432;
 
 const DATABASE_URL = process.env.DATABASE_URL ||
@@ -65,7 +72,8 @@ interface DbTrainRow {
   naturka: string | null; idx: string | null; note: string | null;
 }
 interface DbStopRow { train_id: string; station_id: string; arr: string | null; dep: string | null; path: number }
-interface DbMarkRow { id: string; type: string; peregon: number; start: string; end: string; color: string; text: string | null; service: string | null }
+// ИСПРАВЛЕНО: end -> end_time в интерфейсе, но мапится обратно в end
+interface DbMarkRow { id: string; type: string; peregon: number; start: string; end_time: string; color: string; text: string | null; service: string | null }
 interface DbAlertRow { id: string; type: string; text: string; author: string; created_at: string | number; active: boolean }
 interface DbUserRow { session: string; name: string; role: string; area: string; on_duty: boolean; duty_time: string }
 
@@ -158,7 +166,8 @@ async function loadState() {
   const [stationsRes, trainsRes, marksRes, stopsRes] = await Promise.all([
     pool.query<DbStationRow>("SELECT id, name, km, paths, code FROM stations ORDER BY ord, km"),
     pool.query<DbTrainRow>("SELECT id, number, category, loco_series, loco_num, driver, weight, length, cargo, naturka, idx, note FROM trains"),
-    pool.query<DbMarkRow>("SELECT id, type, peregon, start, end, color, text, service FROM marks"),
+    // ИСПРАВЛЕНО: end_time as end, чтобы TS-код работал без изменений
+    pool.query<DbMarkRow>("SELECT id, type, peregon, start, end_time as end, color, text, service FROM marks"),
     pool.query<DbStopRow>("SELECT train_id, station_id, arr, dep, path FROM train_stops ORDER BY ord"),
   ]);
 
@@ -195,7 +204,7 @@ async function loadState() {
   }));
 
   const marks: Mark[] = marksRes.rows.map(r => ({
-    id: r.id, type: r.type, peregon: r.peregon, start: r.start, end: r.end,
+    id: r.id, type: r.type, peregon: r.peregon, start: r.start, end: r.end, // Берем из алиаса
     color: r.color, text: r.text ?? undefined, service: r.service ?? undefined,
   }));
 
@@ -260,8 +269,9 @@ async function saveState(payload: { stations: Station[]; trains: Train[]; marks:
 
     // Сохраняем пометки
     for (const m of payload.marks) {
+      // ИСПРАВЛЕНО: end -> end_time в SQL
       await client.query(
-        "INSERT INTO marks(id, type, peregon, start, end, color, text, service) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+        "INSERT INTO marks(id, type, peregon, start, end_time, color, text, service) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
         [m.id, m.type, m.peregon, m.start, m.end, m.color, m.text ?? null, m.service ?? null]
       );
     }
@@ -565,11 +575,16 @@ app.prepare().then(async () => {
     server.on("upgrade", (req, socket, head) => {
       const { pathname } = new URL(req.url || "/", "http://localhost");
 
+      // *** ГЛАВНОЕ ИСПРАВЛЕНИЕ ***
+      // Если это запрос от Next.js (HMR, Dev Tools), мы НЕ должны его перехватывать.
+      // Пусть стандартный обработчик Next.js сам разберется с этим соединением.
+      if (pathname.startsWith("/_next/")) {
+        return;
+      }
+
+      // Обработка ТОЛЬКО нашего бизнес-сокета (/ws)
       if (pathname !== "/ws") {
-        // Не наш путь - разрушаем соединение, чтобы Next.js мог обработать свои апгрейды (HMR etc)
-        // Но так как мы используем кастомный сервер, лучше просто игнорировать или делегировать
-        // Для простоты демо: закрываем нецелевые соединения
-        socket.destroy();
+        socket.destroy(); // Другие неизвестные пути всё же блокируем
         return;
       }
 

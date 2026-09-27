@@ -7,29 +7,36 @@
     "build": "next build && npm run build:server",
     "build:server": "esbuild server.ts --outfile=dist/server.cjs --platform=node --format=cjs --target=node20",
     "start": "node dist/server.cjs",
-    "lint": "next lint"
+    "lint": "next lint",
+    "tauri": "tauri",
+    "tauri:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && tauri dev\""
   },
   "dependencies": {
     "date-fns": "^4.4.0",
+    "dotenv": "^18.0.4",
     "lucide-react": "^1.48.0",
     "next": "16.3.6",
+    "pg": "^8.13.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "ws": "^8.18.0",
-    "pg": "^8.13.1"
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.12.0",
     "@types/node": "^20",
+    "@types/pg": "^8.11.10",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.5.13",
+    "concurrently": "^10.0.5",
+    "esbuild": "^0.24.2",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
-    "@types/ws": "^8.5.13",
-    "@types/pg": "^8.11.10",
-    "esbuild": "^0.24.2"
+    "wait-on": "^9.1.0"
   },
   "allowScripts": {
     "unrs-resolver@1.12.2": true,
