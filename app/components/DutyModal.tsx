@@ -12,6 +12,9 @@ export default function DutyModal({ me, presetRole, onUpdate, onClose }: Props) 
   const [time, setTime] = useState(me.dutyTime || "");
   const [area, setArea] = useState(me.area);
 
+  const isAdmin = me.isAdmin === true;
+  const isDutyRole = me.role === "dnc" || me.role === "dsp";
+
   const accept = () => { onUpdate({ name, role, area, dutyTime: time, onDuty: true }); onClose(); };
   const release = () => { onUpdate({ onDuty: false, dutyTime: "" }); onClose(); };
 
@@ -20,14 +23,24 @@ export default function DutyModal({ me, presetRole, onUpdate, onClose }: Props) 
       footer={<>
         {me.onDuty && <button className="gid-btn gid-btn-danger" onClick={release}>Сдать дежурство</button>}
         <button className="gid-btn" onClick={onClose}>Отмена</button>
-        <button className="gid-btn gid-btn-primary" onClick={accept}>✓ Принять</button>
+        <button className="gid-btn gid-btn-primary" onClick={accept}><i className="fas fa-check" /> Принять</button>
       </>}>
       <div className="gid-field"><label className="gid-label">Фамилия дежурного</label>
         <input className="gid-input" value={name} onChange={(e) => setName(e.target.value)} /></div>
       <div className="gid-field"><label className="gid-label">Должность</label>
-        <select className="gid-select" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-          {(Object.keys(ROLE_NAMES) as Role[]).map((r) => <option key={r} value={r}>{ROLE_NAMES[r]}</option>)}
-        </select></div>
+        {isDutyRole && !isAdmin ? (
+          <div className="gid-input opacity-60 cursor-not-allowed select-none">{ROLE_NAMES[role]}</div>
+        ) : (
+          <select className="gid-select" value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            {(Object.keys(ROLE_NAMES) as Role[]).map((r) => <option key={r} value={r}>{ROLE_NAMES[r]}</option>)}
+          </select>
+        )}
+      </div>
+      {isDutyRole && !isAdmin && (
+        <div className="text-[10px] text-[#a64] border border-[#4a2800] rounded px-2 py-1.5 mb-2 bg-[#170c00]">
+          Вы принимаете дежурство на должности «{ROLE_NAMES[role]}». Смена роли доступна только администратору.
+        </div>
+      )}
       <div className="gid-grid2">
         <div className="gid-field"><label className="gid-label">Время начала</label>
           <input className="gid-input" value={time} onChange={(e) => setTime(e.target.value)} placeholder="08:00" /></div>
@@ -35,7 +48,7 @@ export default function DutyModal({ me, presetRole, onUpdate, onClose }: Props) 
           <input className="gid-input" value={area} onChange={(e) => setArea(e.target.value)} /></div>
       </div>
       <div className="text-[10px] text-[#666] border-t border-[#222] pt-2 mt-1">
-        Статус дежурства виден всем онлайн-пользователям в реальном времени.
+        Статус дежурстva виден всем онлайн-пользователям в реальном времени.
       </div>
     </DraggableModal>
   );

@@ -105,8 +105,8 @@ export default function DraggableModal({
         >
           <span className="gid-modal-title"><span className="dot" />{title}</span>
           <span className="flex items-center gap-0.5">
-            <button className="gid-modal-icon-btn" onClick={center} title="В центр">⊙</button>
-            <button className="gid-modal-icon-btn close" onClick={onClose} title="Закрыть (Esc)">✕</button>
+            <button className="gid-modal-icon-btn" onClick={center} title="В центр"><i className="fas fa-circle-dot" /></button>
+            <button className="gid-modal-icon-btn close" onClick={onClose} title="Закрыть (Esc)"><i className="fas fa-xmark" /></button>
           </span>
         </div>
 

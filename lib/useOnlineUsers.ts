@@ -12,6 +12,7 @@ export interface OnlineUser {
   onDuty: boolean;
   dutyTime: string;
   lastSeen?: number;
+  isAdmin?: boolean; // true если пользователь зашёл под админом (сохраняется при смене роли)
 }
 
 const ME_KEY = "gid_user";
@@ -28,9 +29,19 @@ function toWire(u: OnlineUser) {
   };
 }
 
+export interface AuditEntry {
+  id: string;
+  ts: number;
+  actor: string;
+  action: string;
+  target?: string;
+  detail?: string;
+}
+
 export function useOnlineUsers() {
   const [me, setMe] = useState<OnlineUser | null>(null);
   const [users, setUsers] = useState<OnlineUser[]>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
 
   // Флаг: получили ли мы подтверждение от сервера ("hello")
   const [isWsReady, setIsWsReady] = useState(false);
@@ -57,6 +68,19 @@ export function useOnlineUsers() {
           ws.send({ kind: "login", user: toWire(u) });
         }
       } catch {}
+    });
+
+    // Слушаем журнал аудита
+    const offAudit = ws.on("audit", (m: any) => {
+      const list: AuditEntry[] = (m.audit || []).map((a: any) => ({
+        id: String(a.id),
+        ts: Number(a.ts),
+        actor: String(a.actor),
+        action: String(a.action),
+        target: a.target ? String(a.target) : undefined,
+        detail: a.detail ? String(a.detail) : undefined,
+      }));
+      setAudit(list);
     });
 
     // Слушаем список пользователей (presence)
@@ -93,6 +117,7 @@ export function useOnlineUsers() {
 
     return () => {
       offHello();
+      offAudit();
       offPresence();
     };
   }, []);
@@ -113,6 +138,7 @@ export function useOnlineUsers() {
       onDuty: false,
       dutyTime: "",
       lastSeen: Date.now(),
+      isAdmin: role === "admin",
     };
 
     // Сохраняем локально сразу (для восстановления при перезагрузке)
@@ -163,5 +189,5 @@ export function useOnlineUsers() {
     ws.send({ kind: "userPatch", session, patch });
   }, []);
 
-  return { me, users, login, logout, updateMe, updateUser };
+  return { me, users, audit, login, logout, updateMe, updateUser };
 }

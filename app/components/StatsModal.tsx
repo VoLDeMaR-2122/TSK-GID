@@ -22,7 +22,7 @@ export default function StatsModal({ state, alerts, onClose }: Props) {
   );
 
   return (
-    <DraggableModal title="📊 Статистика участка" width={520} onClose={onClose}
+    <DraggableModal title={<><i className="fas fa-chart-column" /> Статистика участка</>} width={520} onClose={onClose}
       footer={<button className="gid-btn" onClick={onClose}>Закрыть</button>}>
       <div className="grid grid-cols-4 gap-2 mb-4">
         <Stat label="Всего ниток" value={state.trains.length} />

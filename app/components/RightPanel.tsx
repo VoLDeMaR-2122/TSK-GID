@@ -71,7 +71,7 @@ export default function RightPanel({ state, role, onEditTrain, onEditMark, onDel
 
                       {/* Прибытие */}
                       <div className="tm flex items-center gap-1 mt-0.5">
-                        <span className="text-[#0f0] w-3 text-center">↓</span>
+                        <span className="text-[#0f0] w-3 text-center"><i className="fas fa-arrow-down" /></span>
                         {canMark ? (
                           <>
                             <input
@@ -88,7 +88,7 @@ export default function RightPanel({ state, role, onEditTrain, onEditMark, onDel
 
                       {/* Отправление */}
                       <div className="tm flex items-center gap-1">
-                        <span className="text-[#0af] w-3 text-center">↑</span>
+                        <span className="text-[#0af] w-3 text-center"><i className="fas fa-arrow-up" /></span>
                         {canMark ? (
                           <>
                             <input
@@ -110,13 +110,13 @@ export default function RightPanel({ state, role, onEditTrain, onEditMark, onDel
 
             {canManage && (
               <div className="flex gap-2">
-                <button className="gid-btn gid-btn-info flex-1" onClick={() => onEditTrain(tr.id)}>✎ Редактировать нитку</button>
-                <button className="gid-btn gid-btn-danger" onClick={() => onDeleteTrain(tr.id)}>🗑</button>
+                <button className="gid-btn gid-btn-info flex-1" onClick={() => onEditTrain(tr.id)}><i className="fas fa-pen" /> Редактировать нитку</button>
+                <button className="gid-btn gid-btn-danger" onClick={() => onDeleteTrain(tr.id)}><i className="fas fa-trash-can" /></button>
               </div>
             )}
             {!canManage && canMark && (
               <div className="text-[9px] text-[#0a7a2a] border border-[#0a4a24] bg-[#06120a] rounded px-2 py-1.5 text-center">
-                ✓ Вы ДСП — вводите фактическое время и путь
+                <i className="fas fa-check" /> Вы ДСП — вводите фактическое время и путь
               </div>
             )}
           </>
@@ -136,14 +136,14 @@ export default function RightPanel({ state, role, onEditTrain, onEditMark, onDel
             </div>
             {can(role, "marks.manage") && (
               <div className="flex gap-2">
-                <button className="gid-btn gid-btn-info flex-1" onClick={() => onEditMark(mk.id)}>✎ Редактировать</button>
-                <button className="gid-btn gid-btn-danger" onClick={() => onDeleteMark(mk.id)}>🗑</button>
+                <button className="gid-btn gid-btn-info flex-1" onClick={() => onEditMark(mk.id)}><i className="fas fa-pen" /> Редактировать</button>
+                <button className="gid-btn gid-btn-danger" onClick={() => onDeleteMark(mk.id)}><i className="fas fa-trash-can" /></button>
               </div>
             )}
           </>
         ) : (
           <div className="text-[#4a4a4a] text-center mt-6 leading-relaxed text-[11px]">
-            <div className="text-2xl mb-2 opacity-40">⊹</div>
+            <div className="text-2xl mb-2 opacity-40"><i className="fas fa-asterisk" /></div>
             Выберите нитку поезда<br />на графике
             <div className="mt-4 text-[10px] text-[#3a3a3a] border-t border-[#1c1c1c] pt-3 space-y-0.5">
               {can(role, "trains.manage") && <div>F2 — новая нитка · F3 — станции</div>}

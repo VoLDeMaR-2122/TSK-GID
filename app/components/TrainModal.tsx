@@ -70,9 +70,9 @@ export default function TrainModal({ stations, initialTrain, presetStationIdx, p
       width={620}
       onClose={onCancel}
       footer={<>
-        {initialTrain && onDelete && <button className="gid-btn gid-btn-danger" onClick={() => onDelete(initialTrain.id)}>🗑 Удалить</button>}
+        {initialTrain && onDelete && <button className="gid-btn gid-btn-danger" onClick={() => onDelete(initialTrain.id)}><i className="fas fa-trash-can" /> Удалить</button>}
         <button className="gid-btn" onClick={onCancel}>Отмена</button>
-        <button className="gid-btn gid-btn-primary" onClick={save}>💾 Сохранить</button>
+        <button className="gid-btn gid-btn-primary" onClick={save}><i className="fas fa-floppy-disk" /> Сохранить</button>
       </>}
     >
       <div className="gid-grid2">
@@ -125,7 +125,7 @@ export default function TrainModal({ stations, initialTrain, presetStationIdx, p
                     <td><input className="gid-input !w-[58px] !py-0.5" value={s.dep || ""} onChange={(e) => updStop(i, "dep", e.target.value)} placeholder="чч:мм" /></td>
                     <td><input className="gid-input !w-[38px] !py-0.5 text-center" value={s.path} onChange={(e) => updStop(i, "path", e.target.value)} /></td>
                     <td className="text-[#777] text-center">{stoyanka(s)}</td>
-                    <td><span onClick={() => delStop(i)} className="text-[#722] hover:text-[#f55] cursor-pointer px-1">✕</span></td>
+                    <td><span onClick={() => delStop(i)} className="text-[#722] hover:text-[#f55] cursor-pointer px-1"><i className="fas fa-xmark" /></span></td>
                   </tr>
                 ))}
               </tbody>

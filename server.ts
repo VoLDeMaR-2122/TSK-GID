@@ -133,6 +133,15 @@ CREATE TABLE IF NOT EXISTS alerts (
   created_at BIGINT NOT NULL,
   active BOOLEAN NOT NULL DEFAULT true
 );
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  ts BIGINT NOT NULL,
+  actor TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT,
+  detail TEXT
+);
 `;
 
 // ================= УТИЛИТЫ ДЛЯ БД =================
@@ -337,6 +346,38 @@ async function removeAlert(id: string) {
   await pool.query("DELETE FROM alerts WHERE id=$1", [id]);
 }
 
+// ================= АУДИТ =================
+type AuditEntry = {
+  id: string;
+  ts: number;
+  actor: string;
+  action: string;
+  target?: string;
+  detail?: string;
+};
+
+async function addAuditEntry(entry: Omit<AuditEntry, "id" | "ts">) {
+  const id = `audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await pool.query(
+    "INSERT INTO audit_log(id, ts, actor, action, target, detail) VALUES($1,$2,$3,$4,$5,$6)",
+    [id, Date.now(), entry.actor, entry.action, entry.target ?? null, entry.detail ?? null]
+  );
+}
+
+async function loadAuditLog(): Promise<AuditEntry[]> {
+  const res = await pool.query(
+    "SELECT id, ts, actor, action, target, detail FROM audit_log ORDER BY ts DESC LIMIT 200"
+  );
+  return res.rows.map((r: any) => ({
+    id: r.id,
+    ts: Number(r.ts),
+    actor: r.actor,
+    action: r.action,
+    target: r.target ?? undefined,
+    detail: r.detail ?? undefined,
+  }));
+}
+
 async function seedIfEmpty() {
   const res = await pool.query<{ c: number }>("SELECT COUNT(*)::int AS c FROM stations");
   if ((res.rows[0]?.c || 0) > 0) return;
@@ -417,6 +458,10 @@ async function broadcastPresence() {
   broadcast({ kind: "presence", users: await getPresenceList() });
 }
 
+async function broadcastAudit() {
+  broadcast({ kind: "audit", audit: await loadAuditLog() });
+}
+
 async function broadcastState() {
   broadcast({ kind: "state", state: await loadState() });
 }
@@ -435,10 +480,12 @@ wss.on("connection", async (socket, req) => {
     const initialState = await loadState();
     const initialAlerts = await loadAlerts();
     const initialPresence = await getPresenceList();
+    const initialAudit = await loadAuditLog();
 
     sendTo(socket, { kind: "state", state: initialState });
     sendTo(socket, { kind: "alerts", alerts: initialAlerts });
     sendTo(socket, { kind: "presence", users: initialPresence });
+    sendTo(socket, { kind: "audit", audit: initialAudit });
   } catch (e) {
     console.error("Error sending initial payload:", e);
   }
@@ -468,6 +515,8 @@ wss.on("connection", async (socket, req) => {
           userCache.set(u.session, u);
 
           await upsertUserLogin(u);
+          await addAuditEntry({ actor: u.name, action: "login", detail: `Роль: ${u.role}` });
+          await broadcastAudit();
 
           const freshMap = await loadUsersMeta();
           const freshUser = freshMap.get(u.session);
@@ -481,6 +530,9 @@ wss.on("connection", async (socket, req) => {
           if (liveSockets.get(currentSession) === socket) {
             liveSockets.delete(currentSession);
           }
+          const u = userCache.get(currentSession);
+          if (u) await addAuditEntry({ actor: u.name, action: "logout" });
+          await broadcastAudit();
           await broadcastPresence();
           break;
         }
@@ -489,7 +541,11 @@ wss.on("connection", async (socket, req) => {
           const targetSession = String(msg.session || "");
           if (!targetSession) return;
 
+          const actor = userCache.get(currentSession)?.name ?? "system";
+          const target = userCache.get(targetSession)?.name ?? targetSession;
           await patchUser(targetSession, msg.patch as Partial<UserMeta>);
+          await addAuditEntry({ actor, action: "userPatch", target, detail: JSON.stringify(msg.patch) });
+          await broadcastAudit();
 
           const freshMap = await loadUsersMeta();
           const freshUser = freshMap.get(targetSession);
@@ -499,8 +555,35 @@ wss.on("connection", async (socket, req) => {
           break;
         }
 
+        case "kick": {
+          const targetSession = String(msg.session || "");
+          if (!targetSession) return;
+
+          const actor = userCache.get(currentSession)?.name ?? "system";
+          const target = userCache.get(targetSession)?.name ?? targetSession;
+
+          // Закрываем соединение пользователя, если он онлайн
+          const targetSocket = liveSockets.get(targetSession);
+          if (targetSocket) {
+            targetSocket.close();
+          }
+
+          // Удаляем из кэша и БД
+          liveSockets.delete(targetSession);
+          userCache.delete(targetSession);
+          await pool.query("DELETE FROM users WHERE session = $1", [targetSession]);
+          await addAuditEntry({ actor, action: "kick", target });
+          await broadcastAudit();
+
+          await broadcastPresence();
+          break;
+        }
+
         case "state": {
+          const actor = userCache.get(currentSession)?.name ?? "system";
           await saveState(msg.state);
+          await addAuditEntry({ actor, action: "state_save", detail: `Поездов: ${msg.state?.trains?.length ?? 0}, Станций: ${msg.state?.stations?.length ?? 0}` });
+          await broadcastAudit();
           await broadcastState();
           break;
         }
@@ -515,18 +598,26 @@ wss.on("connection", async (socket, req) => {
             active: msg.alert.active !== false
           };
           await addAlert(a);
+          await addAuditEntry({ actor: a.author, action: "alert_add", detail: a.text });
+          await broadcastAudit();
           await broadcastAlerts();
           break;
         }
 
         case "alertToggle": {
           await toggleAlert(String(msg.id));
+          const actor = userCache.get(currentSession)?.name ?? "system";
+          await addAuditEntry({ actor, action: "alert_toggle", target: String(msg.id) });
+          await broadcastAudit();
           await broadcastAlerts();
           break;
         }
 
         case "alertRemove": {
           await removeAlert(String(msg.id));
+          const actor = userCache.get(currentSession)?.name ?? "system";
+          await addAuditEntry({ actor, action: "alert_remove", target: String(msg.id) });
+          await broadcastAudit();
           await broadcastAlerts();
           break;
         }
@@ -539,8 +630,20 @@ wss.on("connection", async (socket, req) => {
   socket.on("close", async () => {
     if (liveSockets.get(currentSession) === socket) {
       liveSockets.delete(currentSession);
+      userCache.delete(currentSession);
+
+      // Освобождаем слот дежурства, если пользователь был на дежурстве
+      try {
+        await pool.query(
+          "UPDATE users SET on_duty = false, duty_time = '' WHERE session = $1",
+          [currentSession]
+        );
+      } catch (e) {
+        console.error("Error releasing duty slot:", e);
+      }
+
+      await broadcastPresence();
     }
-    await broadcastPresence();
   });
 });
 

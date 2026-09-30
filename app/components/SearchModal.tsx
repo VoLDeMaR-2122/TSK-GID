@@ -19,7 +19,7 @@ export default function SearchModal({ trains, onSelect, onClose }: Props) {
       footer={<button className="gid-btn" onClick={onClose}>Закрыть</button>}>
       <input
         autoFocus className="gid-input !text-[13px] !py-2 mb-3"
-        placeholder="🔍 номер / локомотив / машинист..."
+        placeholder="номер / локомотив / машинист..."
         value={q} onChange={(e) => setQ(e.target.value)}
       />
       <div className="border border-[#2a2a2a] rounded overflow-hidden">

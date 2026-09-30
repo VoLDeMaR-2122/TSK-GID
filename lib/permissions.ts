@@ -43,8 +43,12 @@ const MATRIX: Record<Role, Action[]> = {
   ],
 };
 
-export function can(role: Role | undefined | null, action: Action): boolean {
+export function can(role: Role | undefined | null, action: Action, isAdmin?: boolean): boolean {
   if (!role) return false;
+  // Если пользователь зашёл под админом, он сохраняет все права админа
+  if (isAdmin && role !== "admin") {
+    return MATRIX["admin"]?.includes(action) ?? false;
+  }
   return MATRIX[role]?.includes(action) ?? false;
 }
 

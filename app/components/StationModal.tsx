@@ -54,8 +54,8 @@ export default function StationModal({ stations, onChange, onClose }: Props) {
                   <td className="whitespace-nowrap text-right">
                     <button className="gid-btn !px-1.5 !py-0.5 mr-1" onClick={() => move(i, -1)} title="Вверх">↑</button>
                     <button className="gid-btn !px-1.5 !py-0.5 mr-1" onClick={() => move(i, 1)} title="Вниз">↓</button>
-                    <button className="gid-btn gid-btn-info !px-1.5 !py-0.5 mr-1" onClick={() => startEdit(i)} title="Изменить">✎</button>
-                    <button className="gid-btn gid-btn-danger !px-1.5 !py-0.5" onClick={() => remove(i)} title="Удалить">✕</button>
+                    <button className="gid-btn gid-btn-info !px-1.5 !py-0.5 mr-1" onClick={() => startEdit(i)} title="Изменить"><i className="fas fa-pen" /></button>
+                    <button className="gid-btn gid-btn-danger !px-1.5 !py-0.5" onClick={() => remove(i)} title="Удалить"><i className="fas fa-xmark" /></button>
                   </td>
                 </tr>
               ))}
@@ -81,7 +81,7 @@ export default function StationModal({ stations, onChange, onClose }: Props) {
               <input className="gid-input" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} /></div>
           </div>
           <div className="flex gap-2 mt-1">
-            <button className="gid-btn gid-btn-primary" onClick={save}>💾 Сохранить</button>
+            <button className="gid-btn gid-btn-primary" onClick={save}><i className="fas fa-floppy-disk" /> Сохранить</button>
             <button className="gid-btn" onClick={() => setEditing(-2)}>Отмена</button>
           </div>
         </div>

@@ -5,19 +5,19 @@
 :root {
   --bg: #000;
   --panel: #0a0a0a;
-  --panel-2: #101010;
-  --elev: #141414;
-  --border: #2a2a2a;
-  --border-soft: #1c1c1c;
-  --text: #c8c8c8;
+  --panel-2: #0f0f0f;
+  --elev: #161616;
+  --border: #252525;
+  --border-soft: #1a1a1a;
+  --text: #b0b0b0;
   --text-bright: #fff;
-  --text-dim: #6a6a6a;
-  --green: #00e050;
-  --accent: #00ff41;
-  --red: #ff2525;
-  --yellow: #ffd000;
-  --orange: #ff8800;
-  --blue: #00aaff;
+  --text-dim: #555;
+  --green: #00cc44;
+  --accent: #00dd44;
+  --red: #dd2222;
+  --yellow: #ccaa00;
+  --orange: #dd7700;
+  --blue: #0099dd;
 }
 
 * { box-sizing: border-box; }
@@ -27,44 +27,59 @@ html, body {
   color: var(--text);
   font-family: 'Consolas', 'Courier New', monospace;
   font-size: 12px;
+  line-height: 1.6;
   margin: 0;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .2px;
 }
 
 /* ===== Скроллбары ===== */
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-track { background: #050505; }
-::-webkit-scrollbar-thumb { background: #262626; border: 2px solid #050505; border-radius: 6px; }
-::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: #080808; }
+::-webkit-scrollbar-thumb { background: #1f1f1f; border: 2px solid #080808; border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: #2a2a2a; }
+::-webkit-scrollbar-corner { background: #080808; }
 
 /* ===== Кнопки ===== */
 .gid-btn {
-  background: linear-gradient(#1c1c1c, #131313);
-  border: 1px solid #333; color: #bbb;
-  padding: 4px 12px; border-radius: 3px; cursor: pointer;
-  font: inherit; font-size: 11px; transition: all .12s; user-select: none;
-  display: inline-flex; align-items: center; gap: 5px; justify-content: center;
+  background: linear-gradient(#2a2a2a, #1a1a1a);
+  border: 1px solid #444; color: #ddd;
+  padding: 5px 14px; border-radius: 0; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 500; transition: all .1s; user-select: none;
+  display: inline-flex; align-items: center; gap: 6px; justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  line-height: 1.5; letter-spacing: .2px;
 }
-.gid-btn:hover { background: linear-gradient(#262626, #1a1a1a); border-color: #4a4a4a; color: #fff; }
-.gid-btn:active { transform: translateY(1px); }
-.gid-btn-primary { background: linear-gradient(#003a1a, #00260f); border-color: #0a7a2a; color: #5f5; }
-.gid-btn-primary:hover { background: linear-gradient(#004a22, #003418); border-color: #0c9a34; color: #9f9; box-shadow: 0 0 10px rgba(0,255,80,.25); }
-.gid-btn-danger { background: linear-gradient(#3a0a0a, #260505); border-color: #7a1a1a; color: #f99; }
-.gid-btn-danger:hover { background: linear-gradient(#4a0e0e, #340808); border-color: #b22; color: #fbb; box-shadow: 0 0 10px rgba(255,40,40,.2); }
-.gid-btn-info { background: linear-gradient(#001a3a, #001126); border-color: #0a4a8a; color: #9cf; }
-.gid-btn-info:hover { border-color: #1a6ac0; color: #cef; box-shadow: 0 0 10px rgba(40,140,255,.25); }
+.gid-btn:hover { background: linear-gradient(#3a3a3a, #2a2a2a); border-color: #666; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+.gid-btn:active { transform: translateY(1px); box-shadow: none; }
+.gid-btn-primary { background: linear-gradient(#0a5a2a, #063a1a); border-color: #0c8a34; color: #7fff9f; }
+.gid-btn-primary:hover { background: linear-gradient(#0c6a32, #084a22); border-color: #0ea040; color: #aaffbf; box-shadow: 0 2px 8px rgba(0,255,80,.2); }
+.gid-btn-danger { background: linear-gradient(#5a1a1a, #3a0e0e); border-color: #8a2a2a; color: #ff9f9f; }
+.gid-btn-danger:hover { background: linear-gradient(#6a2020, #4a1212); border-color: #a03030; color: #ffbbbb; box-shadow: 0 2px 8px rgba(255,40,40,.2); }
+.gid-btn-info { background: linear-gradient(#1a3a5a, #0e2a4a); border-color: #2a5a8a; color: #9fcfff; }
+.gid-btn-info:hover { border-color: #3a7ab0; color: #cfefff; box-shadow: 0 2px 8px rgba(40,140,255,.2); }
+
+/* Маленькие кнопки в таблицах */
+.gid-btn-sm {
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 400;
+}
 
 /* ===== Поля ===== */
 .gid-input, .gid-select, .gid-textarea {
-  background: #050505; border: 1px solid #2e2e2e; color: #ddd;
-  padding: 4px 7px; border-radius: 2px; font: inherit; font-size: 11px;
-  width: 100%; outline: none; transition: border-color .12s, box-shadow .12s;
+  background: #0a0a0a; border: 1px solid #2a2a2a; color: #ddd;
+  padding: 6px 9px; border-radius: 0; font: inherit; font-size: 11px; line-height: 1.6;
+  width: 100%; outline: none; transition: border-color .1s, box-shadow .1s; letter-spacing: .2px;
 }
 .gid-input:focus, .gid-select:focus, .gid-textarea:focus {
-  border-color: #0a7a2a; box-shadow: 0 0 0 2px rgba(0,255,65,.12);
+  border-color: #0a8a34; box-shadow: 0 0 0 1px rgba(0,200,60,.15);
 }
-.gid-input::placeholder, .gid-textarea::placeholder { color: #3e3e3e; }
+.gid-input::placeholder, .gid-textarea::placeholder { color: #3a3a3a; }
 .gid-select { cursor: pointer; }
 .gid-textarea { resize: vertical; min-height: 48px; }
 .gid-label {
@@ -77,146 +92,201 @@ html, body {
 
 /* ===== Модалки ===== */
 .gid-modal {
-  background: #111;
-  border: 1px solid #333; border-radius: 6px;
-  box-shadow: 0 16px 56px rgba(0,0,0,.9), inset 0 0 0 1px rgba(255,255,255,.03);
-  animation: modal-in .16s ease-out;
+  background: #0f0f0f;
+  border: 1px solid #2a2a2a; border-radius: 6px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.95), 0 0 0 1px rgba(255,255,255,.02);
+  animation: modal-in .12s ease-out;
   display: flex; flex-direction: column;
   overflow: hidden;
+  line-height: 1.6;
 }
 @keyframes modal-in {
   from { opacity: 0; transform: scale(.97) translateY(8px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 .gid-modal-header {
-  background: linear-gradient(#1e1e1e, #151515);
-  border-bottom: 1px solid #2c2c2c;
-  padding: 7px 8px 7px 11px;
+  background: #111;
+  border-bottom: 1px solid #252525;
+  padding: 8px 10px 8px 12px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   flex-shrink: 0;
 }
 .gid-modal-title {
-  color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .3px;
+  color: #fff; font-size: 12px; font-weight: 600; letter-spacing: .4px;
   display: flex; align-items: center; gap: 8px; pointer-events: none;
 }
 .gid-modal-title .dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--accent); box-shadow: 0 0 7px var(--accent);
+  width: 6px; height: 6px; border-radius: 0;
+  background: var(--accent); box-shadow: 0 0 6px var(--accent);
 }
 .gid-modal-icon-btn {
-  background: transparent; border: none; color: #777; cursor: pointer;
-  width: 20px; height: 20px; border-radius: 3px;
-  display: grid; place-items: center; font-size: 12px; transition: all .1s;
+  background: transparent; border: 1px solid transparent; color: #666; cursor: pointer;
+  width: 22px; height: 22px; border-radius: 0;
+  display: grid; place-items: center; font-size: 11px; transition: all .08s;
 }
-.gid-modal-icon-btn:hover { background: #2c2c2c; color: #fff; }
-.gid-modal-icon-btn.close:hover { background: #5a1414; color: #f88; }
-.gid-modal-body { padding: 12px; overflow-y: auto; flex: 1; }
+.gid-modal-icon-btn:hover { background: #1a1a1a; border-color: #333; color: #fff; }
+.gid-modal-icon-btn.close:hover { background: #3a1010; border-color: #5a1a1a; color: #f88; }
+.gid-modal-body { padding: 12px; overflow-y: auto; flex: 1; line-height: 1.5; }
 .gid-modal-footer {
-  border-top: 1px solid #2c2c2c; background: #0d0d0d;
+  border-top: 1px solid #252525; background: #0c0c0c;
   padding: 8px 12px; display: flex; gap: 8px; justify-content: flex-end; flex-shrink: 0;
 }
 .gid-resize-handle {
-  position: absolute; right: 0; bottom: 0; width: 16px; height: 16px;
+  position: absolute; right: 0; bottom: 0; width: 14px; height: 14px;
   cursor: nwse-resize; z-index: 5;
-  background: linear-gradient(135deg, transparent 50%, #3a3a3a 50%, #3a3a3a 60%, transparent 60%, transparent 72%, #3a3a3a 72%, #3a3a3a 82%, transparent 82%);
+  background: linear-gradient(135deg, transparent 50%, #333 50%, #333 60%, transparent 60%, transparent 72%, #333 72%, #333 82%, transparent 82%);
 }
 .gid-resize-handle:hover { background: linear-gradient(135deg, transparent 50%, var(--accent) 50%, var(--accent) 60%, transparent 60%, transparent 72%, var(--accent) 72%, var(--accent) 82%, transparent 82%); }
 
 /* ===== Таблицы ===== */
-.gid-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.gid-table { width: 100%; border-collapse: collapse; font-size: 11px; line-height: 1.6; }
 .gid-table th {
-  background: #181818; color: #888; font-weight: 600; text-align: left;
-  padding: 4px 7px; border-bottom: 1px solid #2c2c2c;
-  font-size: 9px; text-transform: uppercase; letter-spacing: .5px;
+  background: #1a1a1a; color: #aaa; font-weight: 600; text-align: left;
+  padding: 8px 14px; border-bottom: 2px solid #444;
+  font-size: 9px; text-transform: uppercase; letter-spacing: .6px;
   position: sticky; top: 0; z-index: 1;
 }
-.gid-table td { padding: 3px 7px; border-bottom: 1px solid #191919; color: #ccc; }
-.gid-table tbody tr { transition: background .1s; }
-.gid-table tbody tr:nth-child(even) { background: #0e0e0e; }
-.gid-table tbody tr:hover { background: #18202c; }
+.gid-table td { padding: 7px 14px; border-bottom: 1px solid #333; color: #ccc; line-height: 1.6; }
+.gid-table tbody tr { transition: background .08s; }
+.gid-table tbody tr:nth-child(even) { background: #101010; }
+.gid-table tbody tr:hover { background: #1c1c1c; }
 
 /* ===== Меню / шапка ===== */
 .gid-menu-item {
-  padding: 2px 9px; border-radius: 3px; color: #999; cursor: pointer;
-  transition: all .1s; font-size: 11px; user-select: none; white-space: nowrap;
+  padding: 3px 10px; border-radius: 0; color: #999; cursor: pointer;
+  transition: all .08s; font-size: 11px; font-weight: 500; user-select: none; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 5px;
+  line-height: 1.5; letter-spacing: .2px;
 }
-.gid-menu-item:hover { background: #1d2733; color: #fff; }
-.gid-menu-item:active { background: #243040; transform: translateY(1px); }
-.gid-menu-item .key { color: #555; font-size: 9px; }
-.gid-menu-item:hover .key { color: #8ab; }
+.gid-menu-item:hover { background: #1a1a1a; color: #fff; }
+.gid-menu-item:active { background: #252525; }
+.gid-menu-item .key { color: #555; font-size: 9px; font-weight: 400; }
+.gid-menu-item:hover .key { color: #777; }
 
 .gid-toggle {
   display: inline-flex; align-items: center; gap: 5px;
-  padding: 2px 8px; border-radius: 3px; border: 1px solid transparent;
-  color: #5a5a5a; cursor: pointer; font-size: 9px; text-transform: uppercase;
-  letter-spacing: .5px; transition: all .12s; user-select: none; font-weight: 600;
+  padding: 3px 9px; border-radius: 0; border: 1px solid transparent;
+  color: #555; cursor: pointer; font-size: 9px; text-transform: uppercase;
+  letter-spacing: .5px; transition: all .08s; user-select: none; font-weight: 600; line-height: 1.4;
 }
-.gid-toggle .led { width: 6px; height: 6px; border-radius: 50%; background: #2e2e2e; transition: all .12s; }
+.gid-toggle .led { width: 6px; height: 6px; border-radius: 50%; background: #2a2a2a; transition: all .08s; }
 .gid-toggle.on { color: var(--accent); border-color: #0a3a1a; background: #06120a; }
 .gid-toggle.on .led { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
-.gid-toggle:hover { border-color: #333; }
+.gid-toggle:hover { border-color: #2a2a2a; }
 
 .gid-badge {
-  padding: 2px 9px; border-radius: 3px; font-size: 10px; cursor: pointer;
-  border: 1px solid; transition: all .15s; user-select: none; white-space: nowrap;
-  display: inline-flex; align-items: center; gap: 6px; font-weight: 600;
+  padding: 4px 12px; border-radius: 0; font-size: 10px; cursor: pointer;
+  border: 1px solid; transition: all .1s; user-select: none; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px; font-weight: 600; line-height: 1.5; letter-spacing: .3px;
 }
-.gid-badge .led { width: 6px; height: 6px; border-radius: 50%; background: #333; transition: all .15s; }
-.gid-badge-dnc { background: #170c00; border-color: #4a2800; color: #a64; }
-.gid-badge-dnc.active { background: #2a1700; border-color: var(--orange); color: #fc6; box-shadow: 0 0 12px rgba(255,136,0,.3); }
+.gid-badge .led { width: 6px; height: 6px; border-radius: 50%; background: #333; transition: all .1s; }
+.gid-badge-dnc { background: #1a0e00; border-color: #5a3000; color: #cc8833; }
+.gid-badge-dnc.active { background: #2a1700; border-color: var(--orange); color: #ffaa44; box-shadow: 0 0 12px rgba(255,136,0,.3); }
 .gid-badge-dnc.active .led { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
-.gid-badge-dsp { background: #00170a; border-color: #0a4a24; color: #5a5; }
-.gid-badge-dsp.active { background: #002a12; border-color: var(--green); color: #6f6; box-shadow: 0 0 12px rgba(0,224,80,.3); }
+.gid-badge-dsp { background: #001a0e; border-color: #0a5a30; color: #44aa66; }
+.gid-badge-dsp.active { background: #002a12; border-color: var(--green); color: #55dd88; box-shadow: 0 0 12px rgba(0,224,80,.3); }
 .gid-badge-dsp.active .led { background: var(--green); box-shadow: 0 0 6px var(--green); }
 
 /* ===== Правая панель ===== */
 .gid-rp-head {
-  padding: 6px 10px; border-bottom: 1px solid #2a2a2a; color: #888;
-  font-size: 9px; text-transform: uppercase; letter-spacing: 1px; font-weight: 700;
-  background: #0d0d0d; flex-shrink: 0;
+  padding: 8px 10px; border-bottom: 1px solid #252525; color: #888;
+  font-size: 9px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+  background: #0c0c0c; flex-shrink: 0;
 }
-.gid-rp-section { border-bottom: 1px solid #191919; padding-bottom: 8px; margin-bottom: 8px; }
-.gid-rp-row { display: flex; justify-content: space-between; gap: 8px; padding: 1.5px 0; font-size: 11px; }
-.gid-rp-row .k { color: #5f5f5f; flex-shrink: 0; }
-.gid-rp-row .v { color: #ddd; text-align: right; word-break: break-word; }
-.gid-rp-title { color: #fff; font-weight: 700; font-size: 14px; letter-spacing: .5px; }
+.gid-rp-section { border-bottom: 1px solid #1a1a1a; padding-bottom: 8px; margin-bottom: 8px; }
+.gid-rp-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 11px; line-height: 1.6; letter-spacing: .2px; }
+.gid-rp-row .k { color: #666; flex-shrink: 0; }
+.gid-rp-row .v { color: #ccc; text-align: right; word-break: break-word; }
+.gid-rp-title { color: #fff; font-weight: 600; font-size: 14px; letter-spacing: .3px; }
 
 /* ===== Timeline расписания ===== */
 .gid-sched { position: relative; padding-left: 15px; margin-top: 2px; }
-.gid-sched::before { content: ''; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1px; background: #2a2a2a; }
-.gid-sched-item { position: relative; padding: 3px 0; font-size: 10px; }
+.gid-sched::before { content: ''; position: absolute; left: 4px; top: 6px; bottom: 6px; width: 1px; background: #252525; }
+.gid-sched-item { position: relative; padding: 4px 0; font-size: 10px; line-height: 1.6; }
 .gid-sched-item::before {
-  content: ''; position: absolute; left: -14px; top: 6px;
-  width: 7px; height: 7px; border-radius: 50%; background: #2e2e2e; border: 1px solid #555;
+  content: ''; position: absolute; left: -14px; top: 7px;
+  width: 6px; height: 6px; border-radius: 0; background: #2a2a2a; border: 1px solid #444;
 }
-.gid-sched-item.arr::before { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 5px rgba(0,255,65,.6); }
-.gid-sched-item.dep::before { background: var(--blue); border-color: var(--blue); box-shadow: 0 0 5px rgba(0,170,255,.6); }
-.gid-sched-item .st { color: #ccc; font-weight: 600; }
-.gid-sched-item .tm { color: #777; font-size: 9px; }
+.gid-sched-item.arr::before { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 5px rgba(0,255,65,.5); }
+.gid-sched-item.dep::before { background: var(--blue); border-color: var(--blue); box-shadow: 0 0 5px rgba(0,170,255,.5); }
+.gid-sched-item .st { color: #ccc; font-weight: 500; letter-spacing: .2px; }
+.gid-sched-item .tm { color: #777; font-size: 9px; letter-spacing: .3px; }
 
 /* ===== Онлайн чипы ===== */
-.gid-chip { padding: 1px 6px; border-radius: 3px; font-size: 9px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid transparent; }
-.gid-chip-dnc { background: #241300; color: #f93; }
-.gid-chip-dsp { background: #00230f; color: #0d7; }
-.gid-chip-op { background: #141414; color: #888; }
-.gid-chip.me { border-color: #ffffff30; box-shadow: 0 0 6px rgba(255,255,255,.08); }
+.gid-chip { padding: 3px 10px; border-radius: 0; font-size: 9px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; border: 1px solid; line-height: 1.5; letter-spacing: .4px; white-space: nowrap; }
+.gid-chip-dnc { background: #2a1500; border-color: #5a3000; color: #ffaa44; }
+.gid-chip-dsp { background: #002a15; border-color: #0a5a30; color: #44dd88; }
+.gid-chip-op { background: #1a1a1a; border-color: #333; color: #999; }
+.gid-chip.me { border-color: #ffffff50; box-shadow: 0 0 8px rgba(255,255,255,.1); }
 .gid-chip .duty-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 4px var(--accent); }
 
 /* ===== Прочее ===== */
-.gid-sep { color: #262626; margin: 0 2px; user-select: none; }
-.gid-clock { color: var(--red); font-weight: 700; font-size: 13px; letter-spacing: 1px; text-shadow: 0 0 8px rgba(255,30,30,.4); }
-.gid-server { font-size: 9px; color: var(--accent); display: inline-flex; align-items: center; gap: 4px; letter-spacing: .5px; }
+.gid-sep { color: #1a1a1a; margin: 0 4px; user-select: none; }
+.gid-clock { color: var(--red); font-weight: 600; font-size: 13px; letter-spacing: 1px; text-shadow: 0 0 8px rgba(255,30,30,.3); font-variant-numeric: tabular-nums; }
+.gid-server { font-size: 9px; color: var(--accent); display: inline-flex; align-items: center; gap: 4px; letter-spacing: .5px; font-weight: 500; }
 .gid-server .led { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); animation: pulse-led 2s infinite; }
 @keyframes pulse-led { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
 @keyframes blink { 50% { opacity: .2; } }
 .gid-blink { animation: blink 1.1s step-end infinite; }
 
 .gid-tooltip {
-  position: fixed; background: #101010ee; border: 1px solid #3a3a3a;
+  position: fixed; background: #0a0a0af0; border: 1px solid #2a2a2a;
   border-left: 2px solid var(--accent);
-  padding: 5px 9px; font-size: 10px; color: #ccc; z-index: 90;
+  padding: 6px 10px; font-size: 10px; color: #bbb; z-index: 90;
   pointer-events: none; white-space: pre-wrap; line-height: 1.5;
-  box-shadow: 0 6px 20px rgba(0,0,0,.7); border-radius: 3px;
-  backdrop-filter: blur(2px);
+  box-shadow: 0 8px 24px rgba(0,0,0,.8); border-radius: 0;
+}
+
+/* ===== Font Awesome ===== */
+.fa, .fas, .far, .fab {
+  display: inline-block;
+  font-style: normal;
+  font-variant: normal;
+  line-height: 1;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Иконки в кнопках */
+.gid-btn .fa, .gid-btn .fas {
+  font-size: 10px;
+  opacity: 0.85;
+  transition: opacity .12s;
+}
+.gid-btn:hover .fa, .gid-btn:hover .fas { opacity: 1; }
+
+/* Иконки в меню */
+.gid-menu-item .fa, .gid-menu-item .fas {
+  font-size: 11px;
+  opacity: 0.7;
+  transition: opacity .1s;
+}
+.gid-menu-item:hover .fa, .gid-menu-item:hover .fas { opacity: 1; }
+
+/* Иконки в заголовках модалок */
+.gid-modal-title .fa, .gid-modal-title .fas {
+  font-size: 13px;
+  color: var(--accent);
+  opacity: 0.9;
+}
+
+/* Иконки в таблицах */
+.gid-table .fa, .gid-table .fas { font-size: 10px; }
+
+/* Иконки в бейджах */
+.gid-badge .fa, .gid-badge .fas { font-size: 10px; }
+
+/* Иконки в чипах */
+.gid-chip .fa, .gid-chip .fas { font-size: 9px; }
+
+/* Иконки в тогглах */
+.gid-toggle .fa, .gid-toggle .fas { font-size: 10px; }
+
+/* Иконки в расписании */
+.gid-sched-item .fa, .gid-sched-item .fas { font-size: 9px; }
+
+/* Иконки в правой панели */
+.gid-rp-head .fa, .gid-rp-head .fas {
+  font-size: 11px;
+  color: #666;
 }

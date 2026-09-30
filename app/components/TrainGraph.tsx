@@ -9,7 +9,6 @@ interface Props {
   onNewTrainAt: (i: number, min: number) => void;
   onEditMark: (id: string) => void;
   scrollTarget: { id: string; ts: number } | null;
-  leftBottom?: React.ReactNode;
 }
 
 const SH = 36;
@@ -20,7 +19,7 @@ const ttm = (t: string | null | undefined) => {
   return m ? +m[1] * 60 + +m[2] : null;
 };
 
-export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, onEditMark, scrollTarget, leftBottom }: Props) {
+export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, onEditMark, scrollTarget }: Props) {
   const lcRef = useRef<HTMLCanvasElement>(null);
   const gcRef = useRef<HTMLCanvasElement>(null);
   const contRef = useRef<HTMLDivElement>(null);
@@ -358,7 +357,6 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
     <div className="flex flex-1 overflow-hidden">
       <div className="w-[180px] bg-[#0a0a0a] shrink-0 flex flex-col overflow-hidden border-r border-[#222]">
         <div className="flex-1 overflow-hidden"><canvas ref={lcRef} className="block" /></div>
-        {leftBottom}
       </div>
       <div ref={contRef} className="flex-1 overflow-auto bg-black relative cursor-crosshair"
         onClick={onClick} onDoubleClick={onDbl} onMouseMove={onMove} onMouseLeave={() => { setTip(null); setHoverSt(-1); }}>

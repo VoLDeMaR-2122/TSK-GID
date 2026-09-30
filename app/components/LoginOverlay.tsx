@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 import { Role, ROLE_NAMES } from "@/lib/permissions";
 
 interface Props {
@@ -7,7 +7,11 @@ interface Props {
 }
 
 const ORDER: Role[] = ["admin", "dnc", "dsp"];
-const ICON: Record<Role, string> = { admin: "🛡", dnc: "🎛", dsp: "🏭" };
+const ICON: Record<Role, React.ReactNode> = {
+  admin: <i className="fas fa-shield-halved" />,
+  dnc: <i className="fas fa-sliders" />,
+  dsp: <i className="fas fa-industry" />,
+};
 
 export default function LoginOverlay({ onLogin }: Props) {
   const [name, setName] = useState("");
@@ -121,14 +125,14 @@ export default function LoginOverlay({ onLogin }: Props) {
             />
           </div>
 
-          {err && <div className="text-[#f55] text-[10px] mb-2 animate-pulse">⚠ {err}</div>}
+          {err && <div className="text-[#f55] text-[10px] mb-2 animate-pulse"><i className="fas fa-triangle-exclamation" /> {err}</div>}
 
           <button
             className={`gid-btn gid-btn-primary w-full !py-2.5 !text-[13px] font-bold mt-1 ${loading ? "opacity-50 cursor-not-allowed" : ""}`}
             onClick={submit}
             disabled={loading}
           >
-            {loading ? "⏳ Подключение..." : "▶ Войти в систему"}
+            {loading ? <><i className="fas fa-hourglass-half" /> Подключение...</> : <><i className="fas fa-play" /> Войти в систему</>}
           </button>
         </div>
       </div>
