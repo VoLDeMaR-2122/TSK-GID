@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { GidState, CAT_COLORS, CAT_NAMES } from "@/lib/types";
 
 interface Props {
@@ -26,12 +26,17 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
   const [tip, setTip] = useState<{ x: number; y: number; text: string } | null>(null);
   const [hoverSt, setHoverSt] = useState(-1);
 
-  // Актуальные значения для нативного слушателя (чтобы не пересоздавать его каждый рендер)
+  // Актуальные значения для нативного слушателя (чтобы не пересоздавать его каждый рендер).
+  // Обновляем в эффекте, а не в теле компонента: ref нельзя трогать во время рендера.
   const hvRef = useRef(state.view.hoursVisible);
-  hvRef.current = state.view.hoursVisible;
   const anchorRef = useRef<{ timeMin: number; mouseX: number } | null>(null);
+  useEffect(() => { hvRef.current = state.view.hoursVisible; });
 
-  const hw = () => (contRef.current ? contRef.current.clientWidth / state.view.hoursVisible : 100);
+  // ширина часа на канвасе — стабильный колбэк, чтобы эффекты не переподписывались зря
+  const hw = useCallback(
+    () => (contRef.current ? contRef.current.clientWidth / state.view.hoursVisible : 100),
+    [state.view.hoursVisible]
+  );
 
   // ================= НАТИВНЫЙ WHEEL (Ctrl+колесо = зум, колесо = скролл) =================
   useEffect(() => {
@@ -65,7 +70,7 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
 
     cont.addEventListener("wheel", onWheelNative, { passive: false });
     return () => cont.removeEventListener("wheel", onWheelNative);
-  }, [onZoomSet]);
+  }, [onZoomSet, hw]);
 
   // Применение якоря: удерживаем точку под курсором после смены масштаба
   useEffect(() => {
@@ -84,7 +89,7 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
     if (!tr || !tr.stops.length) return;
     const min = ttm(tr.stops[0].dep) || ttm(tr.stops[0].arr) || 0;
     contRef.current.scrollLeft = Math.max(0, (min / 60) * hw() - contRef.current.clientWidth / 2);
-  }, [scrollTarget]);
+  }, [scrollTarget, hw, state.trains]);
 
   // ================= ОТРИСОВКА =================
   useEffect(() => {
@@ -184,6 +189,11 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
       });
 
       // ---- Нитки ----
+      // Таблички с номерами рисуем после всех линий: номера стоят на нитке, цветом нитки,
+      // а стрелки направления бронируем, чтобы номера их не закрывали.
+      const numLabels: { t: string; col: string; seg: { x1: number; y1: number; x2: number; y2: number }; fracs: number[]; pri: number }[] = [];
+      const arrowRects: { x0: number; y0: number; x1: number; y1: number }[] = [];
+
       state.trains.forEach((tr) => {
         const col = CAT_COLORS[tr.category] || "#888";
         const sel = state.selected?.type === "train" && state.selected?.id === tr.id;
@@ -211,13 +221,16 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
         if (sel) { c.shadowColor = col; c.shadowBlur = 10; }
         c.strokeStyle = col; c.lineWidth = sel ? 2.5 : 1.5; c.lineJoin = "round";
 
+        // участки нитки — по ним же вешаем номер поезда вдоль линии
+        const segs: { x1: number; y1: number; x2: number; y2: number }[] = [];
+
         for (let i = 0; i < tr.stops.length; i++) {
           const s1 = tr.stops[i];
           const si = state.stations.findIndex((s) => s.id === s1.stationId);
           if (si < 0) continue;
           const y1 = si * SH + SH / 2;
           const a = ttm(s1.arr), d = ttm(s1.dep);
-          if (a !== null && d !== null && a !== d) { c.beginPath(); c.moveTo((a / 60) * W, y1); c.lineTo((d / 60) * W, y1); c.stroke(); }
+          if (a !== null && d !== null && a !== d) { c.beginPath(); c.moveTo((a / 60) * W, y1); c.lineTo((d / 60) * W, y1); c.stroke(); segs.push({ x1: (a / 60) * W, y1, x2: (d / 60) * W, y2: y1 }); }
           if (i < tr.stops.length - 1) {
             const s2 = tr.stops[i + 1];
             const si2 = state.stations.findIndex((s) => s.id === s2.stationId);
@@ -227,6 +240,7 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
             if (sm !== null && em !== null) {
               const x1 = (sm / 60) * W, x2 = (em / 60) * W;
               c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+              segs.push({ x1, y1, x2, y2 });
               const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
               if (len > 34) {
                 const ux = dx / len, uy = dy / len;
@@ -235,6 +249,8 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
                 c.lineTo(mx - ux * 3 + uy * 3.5, my - uy * 3 - ux * 3.5);
                 c.lineTo(mx - ux * 3 - uy * 3.5, my - uy * 3 + ux * 3.5);
                 c.closePath(); c.fill();
+                // бронь под стрелку: таблички с номерами не должны её закрывать
+                arrowRects.push({ x0: mx - 8, y0: my - 8, x1: mx + 8, y1: my + 8 });
               }
             }
           }
@@ -255,14 +271,91 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
         c.restore();
 
         if (state.showNumbers && pts.length) {
-          const p = pts[0];
-          c.font = "bold 11px Consolas, monospace";
-          const tw = c.measureText(tr.number).width;
-          c.fillStyle = "#000d"; c.fillRect(p.x + 4, p.y - 19, tw + 6, 14);
-          c.strokeStyle = col + "55"; c.lineWidth = 1; c.strokeRect(p.x + 4.5, p.y - 18.5, tw + 5, 13);
-          c.fillStyle = col; c.fillText(tr.number, p.x + 7, p.y - 8);
+          // Как в реальном ГИДе: номер поезда — табличка на самой нитке, на прямом участке
+          // между изломами. В начале и в конце нитки; на короткой нитке — одна табличка.
+          c.font = "bold 10px Consolas, monospace";
+          const tw = c.measureText(tr.number).width + 10;
+          const head = pts[0], tail = pts[pts.length - 1];
+          const span = Math.hypot(tail.x - head.x, tail.y - head.y);
+
+          // годятся участки, где табличка помещается целиком и не наезжает на излом
+          const fits = segs.filter((s) => Math.hypot(s.x2 - s.x1, s.y2 - s.y1) >= tw + 10);
+
+          if (fits.length) {
+            numLabels.push({ t: tr.number, col, seg: fits[0], fracs: [0.5, 0.28, 0.72, 0.16, 0.84], pri: 0 });
+            if (span >= tw + 14) numLabels.push({ t: tr.number, col, seg: fits[fits.length - 1], fracs: [0.5, 0.72, 0.28, 0.84, 0.16], pri: 1 });
+          } else {
+            // нитка короткая — одна табличка в начале, на станционной линии
+            numLabels.push({ t: tr.number, col, seg: { x1: head.x, y1: head.y, x2: head.x + tw, y2: head.y }, fracs: [0.5], pri: 0 });
+          }
         }
       });
+
+      // ---- Таблички с номерами: стоят на нитке, цветом нитки, стрелки не перекрывают ----
+      if (state.showNumbers && numLabels.length) {
+        c.save();
+        c.font = "bold 10px Consolas, monospace";
+        c.textAlign = "center";
+        c.textBaseline = "middle";
+        const boxH = 12;
+
+        // сначала номера в начале ниток, потом в конце — при споре за место выигрывает начало
+        numLabels.sort((a, b) => a.pri - b.pri);
+
+        // занятые прямоугольники: стрелки уже заняты, табличка их не перекрывает
+        const taken: { x0: number; y0: number; x1: number; y1: number }[] = arrowRects.map((r) => ({ ...r }));
+        const GAP = 2;
+
+        for (const l of numLabels) {
+          const boxW = c.measureText(l.t).width + 10;
+          let ang = Math.atan2(l.seg.y2 - l.seg.y1, l.seg.x2 - l.seg.x1);
+          if (ang > Math.PI / 2) ang -= Math.PI;        // текст всегда слева направо
+          else if (ang < -Math.PI / 2) ang += Math.PI;
+          const cos = Math.cos(ang), sin = Math.sin(ang);
+          const ux = cos, uy = sin;                      // вдоль нитки
+
+          // Табличка строго на нитке и строго внутри её участка (между изломами):
+          // перебираем доли участка и сдвиги вдоль линии, отступов в сторону нет.
+          const segLen = Math.hypot(l.seg.x2 - l.seg.x1, l.seg.y2 - l.seg.y1);
+          const maxShift = Math.max(0, (segLen - boxW + 12) / 2);
+          const clamp = (v: number) => Math.max(-maxShift, Math.min(maxShift, v));
+
+          const cands: { f: number; sh: number }[] = [];
+          for (const f of l.fracs) for (const sh of [0, clamp(boxW + 8), clamp(-(boxW + 8))]) cands.push({ f, sh });
+
+          let placed = false;
+          outer: for (const { f, sh } of cands) {
+            const px = l.seg.x1 + (l.seg.x2 - l.seg.x1) * f + ux * sh;
+            const py = l.seg.y1 + (l.seg.y2 - l.seg.y1) * f + uy * sh;
+            let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+            for (const [lx, ly] of [[-boxW / 2, -boxH / 2], [boxW / 2, -boxH / 2], [-boxW / 2, boxH / 2], [boxW / 2, boxH / 2]] as [number, number][]) {
+              const ex = px + lx * cos - ly * sin;
+              const ey = py + lx * sin + ly * cos;
+              x0 = Math.min(x0, ex); y0 = Math.min(y0, ey);
+              x1 = Math.max(x1, ex); y1 = Math.max(y1, ey);
+            }
+            if (taken.some((r) => x0 - GAP < r.x1 && x1 + GAP > r.x0 && y0 - GAP < r.y1 && y1 + GAP > r.y0)) continue;
+
+            taken.push({ x0, y0, x1, y1 });
+            c.save();
+            c.translate(px, py);
+            c.rotate(ang);
+            // табличка лежит прямо на нитке: чёрный фон, рамка и цифры — цветом нитки
+            c.fillStyle = "#000";
+            c.fillRect(-boxW / 2, -boxH / 2, boxW, boxH);
+            c.strokeStyle = l.col; c.lineWidth = 1;
+            c.strokeRect(-boxW / 2 + .5, -boxH / 2 + .5, boxW - 1, boxH - 1);
+            c.fillStyle = l.col;
+            c.fillText(l.t, 0, .5);
+            c.restore();
+            placed = true;
+            break outer;
+          }
+          // если все места заняты — номер не рисуем, лучше пусто, чем каша
+          if (!placed) continue;
+        }
+        c.restore();
+      }
 
       // ---- Текущее время ----
       const now = new Date();
@@ -278,7 +371,7 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
     draw();
     window.addEventListener("resize", draw);
     return () => window.removeEventListener("resize", draw);
-  }, [state, hoverSt]);
+  }, [state, hoverSt, hw]);
 
   // ================= HIT-TEST =================
   const hitTest = (cx: number, cy: number) => {

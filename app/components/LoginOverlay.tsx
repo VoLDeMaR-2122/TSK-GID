@@ -4,6 +4,8 @@ import { Role, ROLE_NAMES } from "@/lib/permissions";
 
 interface Props {
   onLogin: (name: string, role: Role, area: string, password: string) => Promise<string | null> | string | null;
+  /** Версия ГИДа — приходит из главного файла app/page.tsx (GID_VERSION) */
+  version?: string;
 }
 
 const ORDER: Role[] = ["admin", "dnc", "dsp"];
@@ -13,7 +15,7 @@ const ICON: Record<Role, React.ReactNode> = {
   dsp: <i className="fas fa-industry" />,
 };
 
-export default function LoginOverlay({ onLogin }: Props) {
+export default function LoginOverlay({ onLogin, version }: Props) {
   const [name, setName] = useState("");
   const [role, setRole] = useState<Role>("dnc");
   const [area, setArea] = useState("");
@@ -55,7 +57,7 @@ export default function LoginOverlay({ onLogin }: Props) {
       <div className="relative gid-modal w-[430px]" style={{ animation: "modal-in .25s ease-out" }}>
         <div className="gid-modal-header" style={{ cursor: "default" }}>
           <span className="gid-modal-title"><span className="dot" />ГИД Урал-ВНИИЖТ</span>
-          <span className="text-[9px] text-[#555] uppercase tracking-widest">v3.2 · auth fix</span>
+          <span className="text-[9px] text-[#5a5a5a] tracking-widest">{version}</span>
         </div>
 
         <div className="gid-modal-body">

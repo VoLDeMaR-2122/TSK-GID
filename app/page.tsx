@@ -1,12 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useGidState } from "@/lib/useGidState";
 import { useOnlineUsers } from "@/lib/useOnlineUsers";
 import { useAlerts } from "@/lib/useAlerts";
 import { ws } from "@/lib/ws";
 import { Train, Mark } from "@/lib/types";
 import { Role, ROLE_SHORT, can } from "@/lib/permissions";
-import { GidSaves } from "@/app/components/GidSaves";
 import TrainGraph from "@/app/components/TrainGraph";
 import RightPanel from "@/app/components/RightPanel";
 import TrainModal from "@/app/components/TrainModal";
@@ -21,11 +20,16 @@ import StatsModal from "@/app/components/StatsModal";
 import DraggableModal from "@/app/components/DraggableModal";
 import Dropdown from "@/app/components/Dropdown";
 
+/**
+ * Версия ГИДа — единая точка правки.
+ * Меняешь строку ниже — новая версия подхватывается везде, где она показывается.
+ */
+export const GID_VERSION = "0.5 Beta";
+
 export default function GidUralPage() {
   const { state, setState, resetData } = useGidState();
   const { me, users, audit, login, logout, updateMe, updateUser } = useOnlineUsers();
   const { alerts, addAlert, toggleAlert, removeAlert } = useAlerts();
-  const importRef = useRef<HTMLInputElement>(null);
 
   // --- Состояния модалок ---
   const [trainModal, setTrainModal] = useState<{ open: boolean; edit: Train | null; pi?: number; pm?: number }>({ open: false, edit: null });
@@ -54,7 +58,7 @@ export default function GidUralPage() {
   const critical = activeAlerts.filter((a) => a.type === "critical");
 
   // --- Логика Поездов ---
-  const openNew = () => { if (can(role, "trains.manage", isAdmin)) setTrainModal({ open: true, edit: null }); };
+  const openNew = useCallback(() => { if (can(role, "trains.manage", isAdmin)) setTrainModal({ open: true, edit: null }); }, [role, isAdmin]);
   const openNewAt = (pi: number, pm: number) => { if (can(role, "trains.manage", isAdmin)) setTrainModal({ open: true, edit: null, pi, pm }); };
   const openEditTrain = (id: string) => { if (can(role, "trains.manage", isAdmin)) setTrainModal({ open: true, edit: state.trains.find((t) => t.id === id) || null }); };
 
@@ -63,10 +67,10 @@ export default function GidUralPage() {
     setTrainModal({ open: false, edit: null });
   };
 
-  const deleteTrain = (id: string) => {
+  const deleteTrain = useCallback((id: string) => {
     setState((p) => ({ ...p, trains: p.trains.filter((t) => t.id !== id), selected: null }));
     setTrainModal({ open: false, edit: null });
-  };
+  }, [setState]);
 
   // Отметка времени ДСП
   const setStopField = (trainId: string, stopIndex: number, field: "arr" | "dep" | "path", value: string | number) => {
@@ -81,7 +85,7 @@ export default function GidUralPage() {
   };
 
   // --- Логика Пометок ---
-  const openNewMark = () => { if (can(role, "marks.manage", isAdmin)) setMarkModal({ open: true, edit: null }); };
+  const openNewMark = useCallback(() => { if (can(role, "marks.manage", isAdmin)) setMarkModal({ open: true, edit: null }); }, [role, isAdmin]);
   const openEditMark = (id: string) => { if (can(role, "marks.manage", isAdmin)) setMarkModal({ open: true, edit: state.marks.find((m) => m.id === id) || null }); };
 
   const saveMark = (mark: Mark) => {
@@ -89,26 +93,27 @@ export default function GidUralPage() {
     setMarkModal({ open: false, edit: null });
   };
 
-  const deleteMark = (id: string) => {
+  const deleteMark = useCallback((id: string) => {
     setState((p) => ({ ...p, marks: p.marks.filter((m) => m.id !== id), selected: null }));
     setMarkModal({ open: false, edit: null });
-  };
+  }, [setState]);
 
-  const deleteSelected = () => {
+  const deleteSelected = useCallback(() => {
     if (state.selected?.type === "train" && can(role, "trains.manage", isAdmin)) deleteTrain(state.selected.id);
     else if (state.selected?.type === "mark" && can(role, "marks.manage", isAdmin)) deleteMark(state.selected.id);
-  };
+  }, [state.selected, role, isAdmin, deleteTrain, deleteMark]);
 
   const selectFromSearch = (id: string) => { setState((p) => ({ ...p, selected: { type: "train", id } })); setScrollTarget({ id, ts: Date.now() }); };
 
   // Экспорт/Импорт
-  const exportJSON = () => {
+  const exportJSON = useCallback(() => {
     const blob = new Blob([JSON.stringify({ stations: state.stations, trains: state.trains, marks: state.marks }, null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     a.download = "gid_ural_export.json";
     a.click();
-  };
+  }, [state.stations, state.trains, state.marks]);
+
 
   const importJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -156,7 +161,7 @@ export default function GidUralPage() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.selected, me, role]);
+  }, [state.selected, me, role, isAdmin, openNew, openNewMark, deleteSelected]);
 
   const setHoursVisible = (v: number) => setState((p) => ({ ...p, view: { ...p.view, hoursVisible: v } }));
   const select = (selected: { type: string; id: string } | null) => setState((p) => ({ ...p, selected }));
@@ -177,7 +182,7 @@ export default function GidUralPage() {
   };
 
   // Если не залогинен — показываем экран входа
-  if (!me) return <LoginOverlay onLogin={login} />;
+  if (!me) return <LoginOverlay onLogin={login} version={GID_VERSION} />;
 
   const mi = (label: React.ReactNode, key: string, fn: () => void, show = true) => show ? <span className="gid-menu-item" onClick={fn}>{label} {key && <span className="key">{key}</span>}</span> : null;
 
@@ -196,7 +201,10 @@ export default function GidUralPage() {
         {mi(<><i className="fas fa-chart-column" /> Статистика</>, "F7", () => setStatsOpen(true), can(role, "stats.view", isAdmin))}
         <span className="gid-sep">|</span>
         {mi(<><i className="fas fa-arrow-down" /> Экспорт</>, "", exportJSON)}
-        {mi(<><i className="fas fa-arrow-up" /> Импорт</>, "", () => importRef.current?.click())}
+        {/* Импорт через нативную метку: ref не нужен, файл выбирается кликом по label */}
+        <label className="gid-menu-item"><i className="fas fa-arrow-up" /> Импорт
+          <input type="file" accept=".json" className="hidden" onChange={importJSON} />
+        </label>
         {mi(<><i className="fas fa-rotate-left" /> Сброс</>, "", resetData)}
         <span className="flex-1" />
         <span className="gid-menu-item" onClick={() => setSearchOpen(true)}><i className="fas fa-magnifying-glass" /> Поиск</span>
@@ -410,8 +418,6 @@ export default function GidUralPage() {
         </span>
         <span>ГИД Урал-ВНИИЖТ · web · {state.trains.length} ниток · {state.stations.length} станций · дежурных: {adminList.length + dncList.length + dspList.length} · оповещений: {activeAlerts.length}</span>
       </div>
-
-      <input ref={importRef} type="file" accept=".json" className="hidden" onChange={importJSON} />
 
       {/* Модалки */}
       {trainModal.open && can(role, "trains.manage", isAdmin) && <TrainModal stations={state.stations} initialTrain={trainModal.edit} presetStationIdx={trainModal.pi} presetMin={trainModal.pm} onSave={saveTrain} onCancel={() => setTrainModal({ open: false, edit: null })} onDelete={deleteTrain} />}
