@@ -103,6 +103,15 @@ CREATE TABLE IF NOT EXISTS alerts (
   created_at BIGINT NOT NULL,
   active BOOLEAN NOT NULL DEFAULT true
 );
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  ts BIGINT NOT NULL,
+  actor TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT,
+  detail TEXT
+);
 `;
 async function waitForDb(retries = 20, delayMs = 2e3) {
   for (let i = 0; i < retries; i++) {
@@ -295,6 +304,26 @@ async function toggleAlert(id) {
 async function removeAlert(id) {
   await pool.query("DELETE FROM alerts WHERE id=$1", [id]);
 }
+async function addAuditEntry(entry) {
+  const id = `audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await pool.query(
+    "INSERT INTO audit_log(id, ts, actor, action, target, detail) VALUES($1,$2,$3,$4,$5,$6)",
+    [id, Date.now(), entry.actor, entry.action, entry.target ?? null, entry.detail ?? null]
+  );
+}
+async function loadAuditLog() {
+  const res = await pool.query(
+    "SELECT id, ts, actor, action, target, detail FROM audit_log ORDER BY ts DESC LIMIT 200"
+  );
+  return res.rows.map((r) => ({
+    id: r.id,
+    ts: Number(r.ts),
+    actor: r.actor,
+    action: r.action,
+    target: r.target ?? void 0,
+    detail: r.detail ?? void 0
+  }));
+}
 async function seedIfEmpty() {
   const res = await pool.query("SELECT COUNT(*)::int AS c FROM stations");
   if ((res.rows[0]?.c || 0) > 0) return;
@@ -382,6 +411,9 @@ async function getPresenceList() {
 async function broadcastPresence() {
   broadcast({ kind: "presence", users: await getPresenceList() });
 }
+async function broadcastAudit() {
+  broadcast({ kind: "audit", audit: await loadAuditLog() });
+}
 async function broadcastState() {
   broadcast({ kind: "state", state: await loadState() });
 }
@@ -396,9 +428,11 @@ wss.on("connection", async (socket, req) => {
     const initialState = await loadState();
     const initialAlerts = await loadAlerts();
     const initialPresence = await getPresenceList();
+    const initialAudit = await loadAuditLog();
     sendTo(socket, { kind: "state", state: initialState });
     sendTo(socket, { kind: "alerts", alerts: initialAlerts });
     sendTo(socket, { kind: "presence", users: initialPresence });
+    sendTo(socket, { kind: "audit", audit: initialAudit });
   } catch (e) {
     console.error("Error sending initial payload:", e);
   }
@@ -425,6 +459,8 @@ wss.on("connection", async (socket, req) => {
           liveSockets.set(u.session, socket);
           userCache.set(u.session, u);
           await upsertUserLogin(u);
+          await addAuditEntry({ actor: u.name, action: "login", detail: `\u0420\u043E\u043B\u044C: ${u.role}` });
+          await broadcastAudit();
           const freshMap = await loadUsersMeta();
           const freshUser = freshMap.get(u.session);
           if (freshUser) userCache.set(u.session, freshUser);
@@ -435,21 +471,48 @@ wss.on("connection", async (socket, req) => {
           if (liveSockets.get(currentSession) === socket) {
             liveSockets.delete(currentSession);
           }
+          const u = userCache.get(currentSession);
+          if (u) await addAuditEntry({ actor: u.name, action: "logout" });
+          await broadcastAudit();
           await broadcastPresence();
           break;
         }
         case "userPatch": {
           const targetSession = String(msg.session || "");
           if (!targetSession) return;
+          const actor = userCache.get(currentSession)?.name ?? "system";
+          const target = userCache.get(targetSession)?.name ?? targetSession;
           await patchUser(targetSession, msg.patch);
+          await addAuditEntry({ actor, action: "userPatch", target, detail: JSON.stringify(msg.patch) });
+          await broadcastAudit();
           const freshMap = await loadUsersMeta();
           const freshUser = freshMap.get(targetSession);
           if (freshUser) userCache.set(targetSession, freshUser);
           await broadcastPresence();
           break;
         }
+        case "kick": {
+          const targetSession = String(msg.session || "");
+          if (!targetSession) return;
+          const actor = userCache.get(currentSession)?.name ?? "system";
+          const target = userCache.get(targetSession)?.name ?? targetSession;
+          const targetSocket = liveSockets.get(targetSession);
+          if (targetSocket) {
+            targetSocket.close();
+          }
+          liveSockets.delete(targetSession);
+          userCache.delete(targetSession);
+          await pool.query("DELETE FROM users WHERE session = $1", [targetSession]);
+          await addAuditEntry({ actor, action: "kick", target });
+          await broadcastAudit();
+          await broadcastPresence();
+          break;
+        }
         case "state": {
+          const actor = userCache.get(currentSession)?.name ?? "system";
           await saveState(msg.state);
+          await addAuditEntry({ actor, action: "state_save", detail: `\u041F\u043E\u0435\u0437\u0434\u043E\u0432: ${msg.state?.trains?.length ?? 0}, \u0421\u0442\u0430\u043D\u0446\u0438\u0439: ${msg.state?.stations?.length ?? 0}` });
+          await broadcastAudit();
           await broadcastState();
           break;
         }
@@ -463,16 +526,24 @@ wss.on("connection", async (socket, req) => {
             active: msg.alert.active !== false
           };
           await addAlert(a);
+          await addAuditEntry({ actor: a.author, action: "alert_add", detail: a.text });
+          await broadcastAudit();
           await broadcastAlerts();
           break;
         }
         case "alertToggle": {
           await toggleAlert(String(msg.id));
+          const actor = userCache.get(currentSession)?.name ?? "system";
+          await addAuditEntry({ actor, action: "alert_toggle", target: String(msg.id) });
+          await broadcastAudit();
           await broadcastAlerts();
           break;
         }
         case "alertRemove": {
           await removeAlert(String(msg.id));
+          const actor = userCache.get(currentSession)?.name ?? "system";
+          await addAuditEntry({ actor, action: "alert_remove", target: String(msg.id) });
+          await broadcastAudit();
           await broadcastAlerts();
           break;
         }
@@ -484,8 +555,17 @@ wss.on("connection", async (socket, req) => {
   socket.on("close", async () => {
     if (liveSockets.get(currentSession) === socket) {
       liveSockets.delete(currentSession);
+      userCache.delete(currentSession);
+      try {
+        await pool.query(
+          "UPDATE users SET on_duty = false, duty_time = '' WHERE session = $1",
+          [currentSession]
+        );
+      } catch (e) {
+        console.error("Error releasing duty slot:", e);
+      }
+      await broadcastPresence();
     }
-    await broadcastPresence();
   });
 });
 const app = (0, import_next.default)({ dev: DEV });

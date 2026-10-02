@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, useCallback, ReactNode } from "react";
 
 interface Props {
-  title: string;
+  title: ReactNode;
   width?: number;
   minW?: number;
   minH?: number;

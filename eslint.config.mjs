@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Собранный серверный бандл (артефакт build:server)
+    "dist/**",
   ]),
 ]);
 

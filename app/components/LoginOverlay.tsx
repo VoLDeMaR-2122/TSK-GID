@@ -71,7 +71,7 @@ export default function LoginOverlay({ onLogin }: Props) {
               value={name}
               onChange={(e) => { setName(e.target.value); setErr(""); }}
               onKeyDown={(e) => e.key === "Enter" && !loading && submit()}
-              placeholder="Иванов И.И."
+              placeholder="Хуй на ны"
               autoFocus
               disabled={loading}
             />
