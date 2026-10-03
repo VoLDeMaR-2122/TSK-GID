@@ -16,8 +16,16 @@ class WSClient {
     if (typeof window === "undefined") return;
     if (this.url) return;
 
-    const proto = location.protocol === "https:" ? "wss:" : "ws:";
-    this.url = `${proto}//${location.host}/ws`;
+    // Адрес бэкенда можно переопределить переменной NEXT_PUBLIC_WS_URL —
+    // так фронтенд на Next.js подключается к отдельному процессу с логикой и БД.
+    // Если переменная не задана, работает как раньше: тот же хост, путь /ws.
+    const override = process.env.NEXT_PUBLIC_WS_URL;
+    if (override) {
+      this.url = override;
+    } else {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      this.url = `${proto}//${location.host}/ws`;
+    }
     this.connect();
   }
 

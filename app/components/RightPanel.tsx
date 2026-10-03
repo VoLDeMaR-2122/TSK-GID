@@ -1,10 +1,10 @@
 "use client";
 import { GidState, CAT_NAMES, CAT_COLORS } from "@/lib/types";
-import { Role, can } from "@/lib/permissions";
+import { Action, Capabilities } from "@/lib/permissions";
 
 interface Props {
   state: GidState;
-  role: Role;
+  caps: Capabilities;
   onEditTrain: (id: string) => void;
   onEditMark: (id: string) => void;
   onDeleteTrain: (id: string) => void;
@@ -14,12 +14,14 @@ interface Props {
 }
 const MT: Record<string, string> = { window: "Окно", line: "Линия", text: "Текст", delay: "Задержка", failure: "Сбойный" };
 
-export default function RightPanel({ state, role, onEditTrain, onEditMark, onDeleteTrain, onDeleteMark, onSetStopField, onMarkNow }: Props) {
+export default function RightPanel({ state, caps, onEditTrain, onEditMark, onDeleteTrain, onDeleteMark, onSetStopField, onMarkNow }: Props) {
   const sel = state.selected;
   const tr = sel?.type === "train" ? state.trains.find((t) => t.id === sel.id) : null;
   const mk = sel?.type === "mark" ? state.marks.find((m) => m.id === sel.id) : null;
-  const canMark = can(role, "trains.mark");
-  const canManage = can(role, "trains.manage");
+  // Права от сервера: только отображение, реальная проверка — на бэкенде.
+  const can = (a: Action) => !!caps?.includes(a);
+  const canMark = can("trains.mark");
+  const canManage = can("trains.manage");
 
   return (
     <div className="w-[260px] bg-[#0a0a0a] border-l border-[#222] shrink-0 flex flex-col overflow-hidden">
@@ -134,7 +136,7 @@ export default function RightPanel({ state, role, onEditTrain, onEditMark, onDel
               {mk.service && <div className="gid-rp-row"><span className="k">Служба</span><span className="v">{mk.service}</span></div>}
               {mk.text && <div className="text-[#aaa] mt-1.5 text-[10px] border-l-2 border-[#444] pl-2">{mk.text}</div>}
             </div>
-            {can(role, "marks.manage") && (
+            {can("marks.manage") && (
               <div className="flex gap-2">
                 <button className="gid-btn gid-btn-info flex-1" onClick={() => onEditMark(mk.id)}><i className="fas fa-pen" /> Редактировать</button>
                 <button className="gid-btn gid-btn-danger" onClick={() => onDeleteMark(mk.id)}><i className="fas fa-trash-can" /></button>
@@ -146,8 +148,8 @@ export default function RightPanel({ state, role, onEditTrain, onEditMark, onDel
             <div className="text-2xl mb-2 opacity-40"><i className="fas fa-asterisk" /></div>
             Выберите нитку поезда<br />на графике
             <div className="mt-4 text-[10px] text-[#3a3a3a] border-t border-[#1c1c1c] pt-3 space-y-0.5">
-              {can(role, "trains.manage") && <div>F2 — новая нитка · F3 — станции</div>}
-              {can(role, "marks.manage") && <div>F5 — пометка / окно</div>}
+              {can("trains.manage") && <div>F2 — новая нитка · F3 — станции</div>}
+              {can("marks.manage") && <div>F5 — пометка / окно</div>}
               {canMark && <div className="text-[#0a7a2a]">Клик по нитке → ввод прибытия,<br />отправления и пути</div>}
               <div>F7 — статистика</div>
             </div>

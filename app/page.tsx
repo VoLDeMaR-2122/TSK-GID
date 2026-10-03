@@ -5,7 +5,8 @@ import { useOnlineUsers } from "@/lib/useOnlineUsers";
 import { useAlerts } from "@/lib/useAlerts";
 import { ws } from "@/lib/ws";
 import { Train, Mark } from "@/lib/types";
-import { Role, ROLE_SHORT, can } from "@/lib/permissions";
+import { renderAlertBody, stripAlertMarkup } from "@/lib/alertFormat";
+import { Role, ROLE_SHORT, Action, can as canWith } from "@/lib/permissions";
 import TrainGraph from "@/app/components/TrainGraph";
 import RightPanel from "@/app/components/RightPanel";
 import TrainModal from "@/app/components/TrainModal";
@@ -28,8 +29,12 @@ export const GID_VERSION = "0.5 Beta";
 
 export default function GidUralPage() {
   const { state, setState, resetData } = useGidState();
-  const { me, users, audit, login, logout, updateMe, updateUser } = useOnlineUsers();
-  const { alerts, addAlert, toggleAlert, removeAlert } = useAlerts();
+  const { me, users, audit, caps, isAdmin, accounts, opError, opNotice, login, logout, updateMe, updateUser, createAccount, patchAccount, resetAccountPassword, changeOwnPassword, refreshAccounts, clearOpFeedback } = useOnlineUsers();
+
+// Права приходят с сервера. can() ниже только прячет ненужные пункты меню —
+// настоящую проверку делает бэкенд и отвечает "forbidden".
+const can = useCallback((action: Action) => canWith(caps, action), [caps]);
+  const { alerts, addAlert, updateAlert, toggleAlert, removeAlert } = useAlerts();
 
   // --- Состояния модалок ---
   const [trainModal, setTrainModal] = useState<{ open: boolean; edit: Train | null; pi?: number; pm?: number }>({ open: false, edit: null });
@@ -53,14 +58,53 @@ export default function GidUralPage() {
   }, []);
 
   const role: Role | undefined = me?.role;
-  const isAdmin = me?.isAdmin === true;
   const activeAlerts = alerts.filter((a) => a.active);
-  const critical = activeAlerts.filter((a) => a.type === "critical");
+
+  // Полоска оповещений: ротация по всем активным, не только критичным.
+  // Клик открывает карточку с полным описанием.
+  const [bannerIdx, setBannerIdx] = useState(0);
+  const [alertDetail, setAlertDetail] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeAlerts.length <= 1) return;
+    const iv = setInterval(() => setBannerIdx((i) => (i + 1) % activeAlerts.length), 6000);
+    return () => clearInterval(iv);
+  }, [activeAlerts.length]);
+
+  const safeIdx = activeAlerts.length ? bannerIdx % activeAlerts.length : 0;
+  const bannerAlert = activeAlerts.length ? activeAlerts[safeIdx] : null;
+
+  const alertBannerStyle = (t: string) =>
+    t === "critical"
+      ? "bg-[#2a0000] border-[#600] text-[#f88]"
+      : t === "warning"
+        ? "bg-[#1a1400] border-[#5a4a00] text-[#fc6]"
+        : "bg-[#00141a] border-[#0a4a5a] text-[#8df]";
+
+  const alertIcon = (t: string) =>
+    t === "critical" ? (
+      <i className="fas fa-circle-exclamation" />
+    ) : t === "warning" ? (
+      <i className="fas fa-triangle-exclamation" />
+    ) : (
+      <i className="fas fa-circle-info" />
+    );
+
+  const detailIdx = alertDetail
+    ? activeAlerts.findIndex((a) => a.id === alertDetail)
+    : -1;
+  const detailAlert = detailIdx >= 0 ? activeAlerts[detailIdx] : null;
+
+  const stepDetail = (d: number) => {
+    if (!activeAlerts.length) return;
+    const next = ((detailIdx < 0 ? 0 : detailIdx) + d + activeAlerts.length) % activeAlerts.length;
+    setAlertDetail(activeAlerts[next].id);
+  };
 
   // --- Логика Поездов ---
-  const openNew = useCallback(() => { if (can(role, "trains.manage", isAdmin)) setTrainModal({ open: true, edit: null }); }, [role, isAdmin]);
-  const openNewAt = (pi: number, pm: number) => { if (can(role, "trains.manage", isAdmin)) setTrainModal({ open: true, edit: null, pi, pm }); };
-  const openEditTrain = (id: string) => { if (can(role, "trains.manage", isAdmin)) setTrainModal({ open: true, edit: state.trains.find((t) => t.id === id) || null }); };
+  const openNew = useCallback(() => { if (can("trains.manage")) setTrainModal({ open: true, edit: null }); }, [can]);
+  const openNewAt = (pi: number, pm: number) => { if (can("trains.manage")) setTrainModal({ open: true, edit: null, pi, pm }); };
+  const openEditTrain = (id: string) => { if (can("trains.manage")) setTrainModal({ open: true, edit: state.trains.find((t) => t.id === id) || null }); };
 
   const saveTrain = (train: Train) => {
     setState((p) => ({ ...p, trains: p.trains.some((t) => t.id === train.id) ? p.trains.map((t) => t.id === train.id ? train : t) : [...p.trains, train], selected: { type: "train", id: train.id } }));
@@ -74,19 +118,19 @@ export default function GidUralPage() {
 
   // Отметка времени ДСП
   const setStopField = (trainId: string, stopIndex: number, field: "arr" | "dep" | "path", value: string | number) => {
-    if (!can(role, "trains.mark", isAdmin)) return;
+    if (!can("trains.mark")) return;
     setState((p) => ({ ...p, trains: p.trains.map((tr) => tr.id !== trainId ? tr : { ...tr, stops: tr.stops.map((s, i) => i === stopIndex ? { ...s, [field]: value } : s ) }) }));
   };
 
   const markNow = (trainId: string, stopIndex: number, field: "arr" | "dep") => {
-    if (!can(role, "trains.mark", isAdmin)) return;
+    if (!can("trains.mark")) return;
     const now = new Date();
     setStopField(trainId, stopIndex, field, String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"));
   };
 
   // --- Логика Пометок ---
-  const openNewMark = useCallback(() => { if (can(role, "marks.manage", isAdmin)) setMarkModal({ open: true, edit: null }); }, [role, isAdmin]);
-  const openEditMark = (id: string) => { if (can(role, "marks.manage", isAdmin)) setMarkModal({ open: true, edit: state.marks.find((m) => m.id === id) || null }); };
+  const openNewMark = useCallback(() => { if (can("marks.manage")) setMarkModal({ open: true, edit: null }); }, [can]);
+  const openEditMark = (id: string) => { if (can("marks.manage")) setMarkModal({ open: true, edit: state.marks.find((m) => m.id === id) || null }); };
 
   const saveMark = (mark: Mark) => {
     setState((p) => ({ ...p, marks: p.marks.some((m) => m.id === mark.id) ? p.marks.map((m) => m.id === mark.id ? mark : m) : [...p.marks, mark], selected: { type: "mark", id: mark.id } }));
@@ -99,9 +143,9 @@ export default function GidUralPage() {
   }, [setState]);
 
   const deleteSelected = useCallback(() => {
-    if (state.selected?.type === "train" && can(role, "trains.manage", isAdmin)) deleteTrain(state.selected.id);
-    else if (state.selected?.type === "mark" && can(role, "marks.manage", isAdmin)) deleteMark(state.selected.id);
-  }, [state.selected, role, isAdmin, deleteTrain, deleteMark]);
+    if (state.selected?.type === "train" && can("trains.manage")) deleteTrain(state.selected.id);
+    else if (state.selected?.type === "mark" && can("marks.manage")) deleteMark(state.selected.id);
+  }, [state.selected, can, deleteTrain, deleteMark]);
 
   const selectFromSearch = (id: string) => { setState((p) => ({ ...p, selected: { type: "train", id } })); setScrollTarget({ id, ts: Date.now() }); };
 
@@ -138,11 +182,11 @@ export default function GidUralPage() {
       switch (e.key) {
         case "F1": e.preventDefault(); setHelpOpen(true); break;
         case "F2": e.preventDefault(); openNew(); break;
-        case "F3": e.preventDefault(); if (can(role, "stations.manage", isAdmin)) setStationOpen(true); break;
+        case "F3": e.preventDefault(); if (can("stations.manage")) setStationOpen(true); break;
         case "F4": e.preventDefault(); setDutyOpen(role || "dnc"); break;
         case "F5": e.preventDefault(); openNewMark(); break;
-        case "F6": e.preventDefault(); if (can(role, "admin.panel", isAdmin)) setAdminOpen(true); break;
-        case "F7": e.preventDefault(); if (can(role, "stats.view", isAdmin)) setStatsOpen(true); break;
+        case "F6": e.preventDefault(); if (can("admin.panel")) setAdminOpen(true); break;
+        case "F7": e.preventDefault(); if (can("stats.view")) setStatsOpen(true); break;
         case "Delete": e.preventDefault(); deleteSelected(); break;
         case "Escape":
           setTrainModal({ open: false, edit: null });
@@ -156,12 +200,13 @@ export default function GidUralPage() {
           setAlertsOpen(false);
           setOnlineOpen(false);
           setAuditOpen(false);
+          setAlertDetail(null);
           break;
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [state.selected, me, role, isAdmin, openNew, openNewMark, deleteSelected]);
+  }, [state.selected, me, role, can, openNew, openNewMark, deleteSelected]);
 
   const setHoursVisible = (v: number) => setState((p) => ({ ...p, view: { ...p.view, hoursVisible: v } }));
   const select = (selected: { type: string; id: string } | null) => setState((p) => ({ ...p, selected }));
@@ -192,13 +237,13 @@ export default function GidUralPage() {
       <div className="h-[28px] bg-[#0e0e0e] border-b border-[#1a1a1a] flex items-center px-2 gap-1 shrink-0">
         {mi("Помощь", "F1", () => setHelpOpen(true))}
         <span className="gid-sep">|</span>
-        {mi("Новая нитка", "F2", openNew, can(role, "trains.manage", isAdmin))}
-        {mi("Станции", "F3", () => setStationOpen(true), can(role, "stations.manage", isAdmin))}
+        {mi("Новая нитка", "F2", openNew, can("trains.manage"))}
+        {mi("Станции", "F3", () => setStationOpen(true), can("stations.manage"))}
         {mi("Дежурство", "F4", () => setDutyOpen(role ?? null))}
-        {mi("Пометка", "F5", openNewMark, can(role, "marks.manage", isAdmin))}
+        {mi("Пометка", "F5", openNewMark, can("marks.manage"))}
         <span className="gid-sep">|</span>
-        {mi(<><i className="fas fa-shield-halved" /> Панель</>, "F6", () => setAdminOpen(true), can(role, "admin.panel", isAdmin))}
-        {mi(<><i className="fas fa-chart-column" /> Статистика</>, "F7", () => setStatsOpen(true), can(role, "stats.view", isAdmin))}
+        {mi(<><i className="fas fa-shield-halved" /> Панель</>, "F6", () => setAdminOpen(true), can("admin.panel"))}
+        {mi(<><i className="fas fa-chart-column" /> Статистика</>, "F7", () => setStatsOpen(true), can("stats.view"))}
         <span className="gid-sep">|</span>
         {mi(<><i className="fas fa-arrow-down" /> Экспорт</>, "", exportJSON)}
         {/* Импорт через нативную метку: ref не нужен, файл выбирается кликом по label */}
@@ -218,12 +263,24 @@ export default function GidUralPage() {
         <span className="gid-menu-item" onClick={logout}><i className="fas fa-power-off" /> Выход</span>
       </div>
 
-      {/* Баннер критичного оповещения */}
-      {critical.length > 0 && (
-        <div className="h-[22px] bg-[#2a0000] border-b border-[#600] flex items-center px-2.5 gap-2 shrink-0 text-[11px] text-[#f88] animate-pulse">
-          <i className="fas fa-circle-exclamation" />
-          <span className="font-bold truncate">{critical[critical.length - 1].text}</span>
-          <span className="ml-auto text-[#a55] text-[9px]">{critical[critical.length - 1].author}</span>
+      {/* Полоска оповещений: все активные типы, клик — полные детали */}
+      {bannerAlert && (
+        <div
+          className={`h-[22px] border-b flex items-center px-2.5 gap-2 shrink-0 text-[11px] cursor-pointer select-none ${alertBannerStyle(bannerAlert.type)}`}
+          onClick={() => setAlertDetail(bannerAlert.id)}
+          title="Нажмите, чтобы открыть полное описание"
+        >
+          {alertIcon(bannerAlert.type)}
+          <span className="font-bold truncate">
+            {stripAlertMarkup(bannerAlert.title || bannerAlert.text) || "Без названия"}
+          </span>
+          {bannerAlert.title && bannerAlert.text && (
+            <span className="truncate opacity-70 hidden md:inline">· {stripAlertMarkup(bannerAlert.text)}</span>
+          )}
+          <span className="ml-auto text-[9px] opacity-70 whitespace-nowrap">
+            {activeAlerts.length > 1 && `${safeIdx + 1}/${activeAlerts.length} · `}
+            {bannerAlert.author}
+          </span>
         </div>
       )}
 
@@ -235,10 +292,12 @@ export default function GidUralPage() {
           <div className="gid-modal-body !p-0 max-h-[300px] overflow-y-auto">
             {activeAlerts.length === 0 ? <div className="text-center text-[#555] py-6 text-[11px]">Активных оповещений нет</div> : (
               activeAlerts.map((a) => (
-                <div key={a.id} className={`px-3 py-2.5 border-b border-[#1a1a1a] text-[11px] ${a.type === "critical" ? "bg-[#1a0000]" : a.type === "warning" ? "bg-[#1a1400]" : ""}`}>
+                <div key={a.id} className={`px-3 py-2.5 border-b border-[#1a1a1a] text-[11px] cursor-pointer hover:bg-[#151515] ${a.type === "critical" ? "bg-[#1a0000]" : a.type === "warning" ? "bg-[#1a1400]" : ""}`}
+                  onClick={() => { setAlertDetail(a.id); setAlertsOpen(false); }}
+                  title="Открыть полное описание">
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5">{a.type === "critical" ? <i className="fas fa-circle-exclamation" /> : a.type === "warning" ? <i className="fas fa-triangle-exclamation" /> : <i className="fas fa-circle-info" />}</span>
-                    <div className="flex-1"><div className="text-[#ddd]">{a.text}</div><div className="text-[#666] text-[9px] mt-0.5">{a.author} · {new Date(a.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div></div>
+                    <div className="flex-1"><div className="text-[#ddd] font-bold">{stripAlertMarkup(a.title || a.text) || "Без названия"}</div><div className="text-[#666] text-[9px] mt-0.5">{a.author} · {new Date(a.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div></div>
                   </div>
                 </div>
               ))
@@ -285,15 +344,16 @@ export default function GidUralPage() {
                       {isAdmin && (
                         <td className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Dropdown
-                              label="Роль"
-                              options={[
-                                { value: "admin", label: "Админ", icon: "fas fa-shield-halved" },
-                                { value: "dnc", label: "ДНЦ", icon: "fas fa-user-tie" },
-                                { value: "dsp", label: "ДСП", icon: "fas fa-user" },
-                              ]}
-                              onSelect={(v) => updateUser(u.session, { role: v as Role })}
-                            />
+                            {u.role !== "admin" && (
+                              <Dropdown
+                                label="Роль"
+                                options={[
+                                  { value: "dnc", label: "ДНЦ", icon: "fas fa-user-tie" },
+                                  { value: "dsp", label: "ДСП", icon: "fas fa-user" },
+                                ]}
+                                onSelect={(v) => updateUser(u.session, { role: v as Role })}
+                              />
+                            )}
                             <button
                               className="gid-btn gid-btn-sm"
                               onClick={() => {
@@ -407,7 +467,7 @@ export default function GidUralPage() {
       {/* График + панель */}
       <div className="flex flex-1 overflow-hidden">
         <TrainGraph state={state} onZoomSet={setHoursVisible} onSelect={select} onNewTrainAt={openNewAt} onEditMark={openEditMark} scrollTarget={scrollTarget} />
-        <RightPanel state={state} role={role!} onEditTrain={openEditTrain} onEditMark={openEditMark} onDeleteTrain={deleteTrain} onDeleteMark={deleteMark} onSetStopField={setStopField} onMarkNow={markNow} />
+        <RightPanel state={state} caps={caps ?? []} onEditTrain={openEditTrain} onEditMark={openEditMark} onDeleteTrain={deleteTrain} onDeleteMark={deleteMark} onSetStopField={setStopField} onMarkNow={markNow} />
       </div>
 
       {/* Статус-бар */}
@@ -420,17 +480,53 @@ export default function GidUralPage() {
       </div>
 
       {/* Модалки */}
-      {trainModal.open && can(role, "trains.manage", isAdmin) && <TrainModal stations={state.stations} initialTrain={trainModal.edit} presetStationIdx={trainModal.pi} presetMin={trainModal.pm} onSave={saveTrain} onCancel={() => setTrainModal({ open: false, edit: null })} onDelete={deleteTrain} />}
-      {stationOpen && can(role, "stations.manage", isAdmin) && <StationModal stations={state.stations} onChange={(stations) => setState((p) => ({ ...p, stations }))} onClose={() => setStationOpen(false)} />}
-      {markModal.open && can(role, "marks.manage", isAdmin) && <MarkModal stations={state.stations} initialMark={markModal.edit} onSave={saveMark} onCancel={() => setMarkModal({ open: false, edit: null })} onDelete={deleteMark} />}
+      {trainModal.open && can("trains.manage") && <TrainModal stations={state.stations} initialTrain={trainModal.edit} presetStationIdx={trainModal.pi} presetMin={trainModal.pm} onSave={saveTrain} onCancel={() => setTrainModal({ open: false, edit: null })} onDelete={deleteTrain} />}
+      {stationOpen && can("stations.manage") && <StationModal stations={state.stations} onChange={(stations) => setState((p) => ({ ...p, stations }))} onClose={() => setStationOpen(false)} />}
+      {markModal.open && can("marks.manage") && <MarkModal stations={state.stations} initialMark={markModal.edit} onSave={saveMark} onCancel={() => setMarkModal({ open: false, edit: null })} onDelete={deleteMark} />}
       {searchOpen && <SearchModal trains={state.trains} onSelect={selectFromSearch} onClose={() => setSearchOpen(false)} />}
-      {dutyOpen && <DutyModal me={me} presetRole={dutyOpen} onUpdate={updateMe} onClose={() => setDutyOpen(null)} />}
+      {detailAlert && (
+        <DraggableModal
+          title={<>Оповещение · {detailAlert.type === "critical" ? "Критично" : detailAlert.type === "warning" ? "Внимание" : "Инфо"}</>}
+          width={460} minH={200} onClose={() => setAlertDetail(null)}
+          footer={
+            <>
+              {activeAlerts.length > 1 && (
+                <>
+                  <button className="gid-btn gid-btn-sm" onClick={() => stepDetail(-1)}>← Назад</button>
+                  <button className="gid-btn gid-btn-sm" onClick={() => stepDetail(1)}>Далее →</button>
+                  <span className="text-[#555] text-[10px] self-center">{detailIdx + 1}/{activeAlerts.length}</span>
+                </>
+              )}
+              <button className="gid-btn" onClick={() => setAlertDetail(null)}>Закрыть</button>
+            </>
+          }>
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[#ccc]">{alertIcon(detailAlert.type)}</span>
+            <span className="gid-rp-title">{detailAlert.title || "Без названия"}</span>
+          </div>
+          <div className="text-[10px] text-[#666] mb-2">
+            {detailAlert.author} · {new Date(detailAlert.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+          </div>
+          {detailAlert.text && (
+            <div className="text-[11px] text-[#ccc] border-l-2 border-[#444] pl-2 mb-2">{stripAlertMarkup(detailAlert.text)}</div>
+          )}
+          {detailAlert.full ? (
+            <div className="text-[11px] text-[#aaa] leading-relaxed">{renderAlertBody(detailAlert.full)}</div>
+          ) : (
+            <div className="text-[10px] text-[#555] italic">Подробного описания нет.</div>
+          )}
+        </DraggableModal>
+      )}
+      {dutyOpen && <DutyModal me={me} presetRole={dutyOpen} onUpdate={updateMe} onClose={() => setDutyOpen(null)} changeOwnPassword={changeOwnPassword} opError={opError} opNotice={opNotice} clearOpFeedback={clearOpFeedback} />}
       {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
-      {statsOpen && can(role, "stats.view", isAdmin) && <StatsModal state={state} alerts={alerts} onClose={() => setStatsOpen(false)} />}
-      {adminOpen && can(role, "admin.panel", isAdmin) && (
-        <AdminPanel role={role!} actorName={me.name} stations={state.stations} trains={state.trains} users={users} alerts={alerts}
+      {statsOpen && can("stats.view") && <StatsModal state={state} alerts={alerts} onClose={() => setStatsOpen(false)} />}
+      {adminOpen && can("admin.panel") && (
+        <AdminPanel role={role!} caps={caps ?? []} actorName={me.name} stations={state.stations} trains={state.trains} users={users} alerts={alerts}
+          accounts={accounts} opError={opError} opNotice={opNotice}
           setStations={(s) => setState((p) => ({ ...p, stations: s }))} updateUser={updateUser}
-          addAlert={addAlert} toggleAlert={toggleAlert} removeAlert={removeAlert}
+          createAccount={createAccount} patchAccount={patchAccount} resetAccountPassword={resetAccountPassword}
+          refreshAccounts={refreshAccounts} clearOpFeedback={clearOpFeedback}
+          addAlert={addAlert} updateAlert={updateAlert} toggleAlert={toggleAlert} removeAlert={removeAlert}
           deleteTrain={deleteTrain} editTrain={openEditTrain} onClose={() => setAdminOpen(false)} />
       )}
     </div>

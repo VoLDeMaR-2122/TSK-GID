@@ -13,7 +13,9 @@ const PORT = Number(process.env.PORT || 3000);
 const HOSTNAME = "0.0.0.0";
 
 const PG_USER = process.env.POSTGRES_USER || "gid";
-const PG_PASS = process.env.POSTGRES_PASSWORD || "gidpass";
+// Пароль берётся только из окружения. Значение по умолчанию было бы
+// утечкой: реквизиты доступа лежали бы прямо в репозитории.
+const PG_PASS = process.env.POSTGRES_PASSWORD;
 const PG_DB = process.env.POSTGRES_DB || "gid";
 const PG_HOST = process.env.DB_HOST || "localhost";
 const PG_PORT = process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432;
@@ -52,21 +54,8 @@ type Mark = {
   id: string; type: string; peregon: number; start: string; end: string;
   color: string; text?: string; service?: string;
 };
-type Alert = {
-  id: string; type: string; text: string; author: string; createdAt: number; active: boolean;
-};
 
 // Интерфейсы для строк из Postgres (snake_case)
-interface DbStationRow { id: string; name: string; km: number; paths: number; code: string }
-interface DbTrainRow {
-  id: string; number: string; category: string;
-  loco_series: string | null; loco_num: string | null; driver: string | null;
-  weight: string | null; length: string | null; cargo: string | null;
-  naturka: string | null; idx: string | null; note: string | null;
-}
-interface DbStopRow { train_id: string; station_id: string; arr: string | null; dep: string | null; path: number }
-interface DbMarkRow { id: string; type: string; peregon: number; start: string; end_time: string; color: string; text: string | null; service: string | null }
-interface DbAlertRow { id: string; type: string; text: string; author: string; created_at: string | number; active: boolean }
 interface DbUserRow { session: string; name: string; role: string; area: string; on_duty: boolean; duty_time: string }
 
 // ================= СХЕМА БД =================
@@ -154,82 +143,13 @@ async function waitForDb(retries = 20, delayMs = 2000): Promise<void> {
       client.release();
       console.log("[DB] Connection established successfully.");
       return;
-    } catch (err: any) {
-      console.warn(`[DB] Attempt ${i + 1}/${retries} failed: ${err.message}. Retrying in ${delayMs}ms...`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[DB] Attempt ${i + 1}/${retries} failed: ${msg}. Retrying in ${delayMs}ms...`);
       if (i === retries - 1) throw err;
       await new Promise(r => setTimeout(r, delayMs));
     }
   }
-}
-
-async function loadState() {
-  // 1. Выполняем параллельные запросы к БД
-  const [stationsRes, trainsRes, marksRes, stopsRes] = await Promise.all([
-    pool.query<DbStationRow>("SELECT id, name, km, paths, code FROM stations ORDER BY ord, km"),
-    pool.query<DbTrainRow>("SELECT id, number, category, loco_series, loco_num, driver, weight, length, cargo, naturka, idx, note FROM trains"),
-    pool.query<DbMarkRow>("SELECT id, type, peregon, start, end_time, color, text, service FROM marks"),
-    pool.query<DbStopRow>("SELECT train_id, station_id, arr, dep, path FROM train_stops ORDER BY ord"),
-  ]);
-
-  // 2. Группируем остановки по поездам
-  const stopsByTrain = new Map<string, Stop[]>();
-  for (const r of stopsRes.rows) {
-    if (!stopsByTrain.has(r.train_id)) stopsByTrain.set(r.train_id, []);
-    stopsByTrain.get(r.train_id)!.push({
-      stationId: r.station_id,
-      arr: r.arr,
-      dep: r.dep,
-      path: r.path,
-    });
-  }
-
-  // 3. Маппим станции
-  const stations: Station[] = stationsRes.rows.map(r => ({
-    id: r.id,
-    name: r.name,
-    km: r.km,
-    paths: r.paths,
-    code: r.code
-  }));
-
-  // 4. Маппим поезда
-  const trains: Train[] = trainsRes.rows.map(r => ({
-    id: r.id,
-    number: r.number,
-    category: r.category,
-    locoSeries: r.loco_series ?? undefined,
-    locoNum: r.loco_num ?? undefined,
-    driver: r.driver ?? undefined,
-    weight: r.weight ?? undefined,
-    length: r.length ?? undefined,
-    cargo: r.cargo ?? undefined,
-    naturka: r.naturka ?? undefined,
-    index: r.idx ?? undefined,
-    note: r.note ?? undefined,
-    stops: stopsByTrain.get(r.id) || [],
-  }));
-
-  // 5. Маппим пометки (ИСПРАВЛЕНО: используем r.end_time из SQL)
-  const marks: Mark[] = marksRes.rows.map(r => ({
-    id: r.id,
-    type: r.type,
-    peregon: r.peregon,
-    start: r.start,
-    end: r.end_time, // <-- Правильное маппинг поля из БД в модель TS
-    color: r.color,
-    text: r.text ?? undefined,
-    service: r.service ?? undefined,
-  }));
-
-  return { stations, trains, marks };
-}
-
-async function loadAlerts(): Promise<Alert[]> {
-  const res = await pool.query<DbAlertRow>("SELECT * FROM alerts ORDER BY created_at DESC");
-  return res.rows.map(r => ({
-    id: r.id, type: r.type, text: r.text, author: r.author,
-    createdAt: Number(r.created_at), active: r.active
-  }));
 }
 
 async function loadUsersMeta(): Promise<Map<string, UserMeta>> {
@@ -297,87 +217,6 @@ async function saveState(payload: { stations: Station[]; trains: Train[]; marks:
   }
 }
 
-async function upsertUserLogin(u: UserMeta) {
-  await pool.query(
-    `INSERT INTO users(session, name, role, area, on_duty, duty_time)
-     VALUES($1,$2,$3,$4,$5,$6)
-     ON CONFLICT(session) DO UPDATE SET
-       name = EXCLUDED.name,
-       role = EXCLUDED.role,
-       area = EXCLUDED.area`,
-    [u.session, u.name, u.role, u.area, u.onDuty, u.dutyTime]
-  );
-}
-
-const USER_COL_MAP: Record<string, string> = {
-  name: "name", role: "role", area: "area", onDuty: "on_duty", dutyTime: "duty_time"
-};
-
-async function patchUser(session: string, patch: Partial<UserMeta>) {
-  const sets: string[] = [];
-  const values: any[] = [];
-  let idx = 1;
-
-  for (const key of Object.keys(patch) as (keyof UserMeta)[]) {
-    const col = USER_COL_MAP[key];
-    if (!col) continue;
-    sets.push(`${col}=$${idx++}`);
-    values.push(patch[key]);
-  }
-
-  if (!sets.length) return;
-  values.push(session);
-
-  await pool.query(`UPDATE users SET ${sets.join(", ")} WHERE session=$${idx}`, values);
-}
-
-async function addAlert(a: Alert) {
-  await pool.query(
-    "INSERT INTO alerts(id, type, text, author, created_at, active) VALUES($1,$2,$3,$4,$5,$6)",
-    [a.id, a.type, a.text, a.author, a.createdAt, a.active]
-  );
-}
-
-async function toggleAlert(id: string) {
-  await pool.query("UPDATE alerts SET active = NOT active WHERE id=$1", [id]);
-}
-
-async function removeAlert(id: string) {
-  await pool.query("DELETE FROM alerts WHERE id=$1", [id]);
-}
-
-// ================= АУДИТ =================
-type AuditEntry = {
-  id: string;
-  ts: number;
-  actor: string;
-  action: string;
-  target?: string;
-  detail?: string;
-};
-
-async function addAuditEntry(entry: Omit<AuditEntry, "id" | "ts">) {
-  const id = `audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  await pool.query(
-    "INSERT INTO audit_log(id, ts, actor, action, target, detail) VALUES($1,$2,$3,$4,$5,$6)",
-    [id, Date.now(), entry.actor, entry.action, entry.target ?? null, entry.detail ?? null]
-  );
-}
-
-async function loadAuditLog(): Promise<AuditEntry[]> {
-  const res = await pool.query(
-    "SELECT id, ts, actor, action, target, detail FROM audit_log ORDER BY ts DESC LIMIT 200"
-  );
-  return res.rows.map((r: any) => ({
-    id: r.id,
-    ts: Number(r.ts),
-    actor: r.actor,
-    action: r.action,
-    target: r.target ?? undefined,
-    detail: r.detail ?? undefined,
-  }));
-}
-
 async function seedIfEmpty() {
   const res = await pool.query<{ c: number }>("SELECT COUNT(*)::int AS c FROM stations");
   if ((res.rows[0]?.c || 0) > 0) return;
@@ -425,227 +264,63 @@ async function seedIfEmpty() {
   console.log("✅ Seed completed.");
 }
 
-// ================= WEBSOCKET SERVER =================
+// ================= WEBSOCKET: ПРОКСИ НА RUST-БЭКЕНД =================
 const wss = new WebSocketServer({ noServer: true });
-const liveSockets = new Map<string, WebSocket>();
 const userCache = new Map<string, UserMeta>();
 
-function sendTo(sock: WebSocket | undefined, msg: object) {
-  if (sock && sock.readyState === WebSocket.OPEN) {
-    sock.send(JSON.stringify(msg));
-  }
-}
+// ---------- Прокси WebSocket → Rust-бэкенд ----------
+// Вся логика и БД — на Rust. Node только отдаёт страницы Next.js
+// и проксирует кадры /ws один в один. Своего протокола здесь нет:
+// прежний принимал роль от клиента без проверки пароля, поэтому удалён.
+function proxyWsToRust(client: WebSocket, url: string) {
+  const port = Number(process.env.BACKEND_PORT || 3001);
+  const upstream = new WebSocket(`ws://127.0.0.1:${port}${url}`);
 
-function broadcast(msg: object) {
-  const data = JSON.stringify(msg);
-  for (const sock of liveSockets.values()) {
-    if (sock.readyState === WebSocket.OPEN) {
-      sock.send(data);
-    }
-  }
-}
+  let clientAlive = true;
+  let upstreamOpen = false;
+  const pending: Array<{ data: WebSocket.RawData; binary: boolean }> = [];
 
-async function getPresenceList(): Promise<UserMeta[]> {
-  const users: UserMeta[] = [];
-  for (const session of liveSockets.keys()) {
-    const u = userCache.get(session);
-    if (u) users.push(u);
-  }
-  return users;
-}
-
-async function broadcastPresence() {
-  broadcast({ kind: "presence", users: await getPresenceList() });
-}
-
-async function broadcastAudit() {
-  broadcast({ kind: "audit", audit: await loadAuditLog() });
-}
-
-async function broadcastState() {
-  broadcast({ kind: "state", state: await loadState() });
-}
-
-async function broadcastAlerts() {
-  broadcast({ kind: "alerts", alerts: await loadAlerts() });
-}
-
-wss.on("connection", async (socket, req) => {
-  const url = new URL(req.url || "/", "http://localhost");
-  let currentSession = url.searchParams.get("session") || `anon-${Math.random().toString(36).slice(2)}`;
-
-  sendTo(socket, { kind: "hello", clientId: currentSession });
-
-  try {
-    const initialState = await loadState();
-    const initialAlerts = await loadAlerts();
-    const initialPresence = await getPresenceList();
-    const initialAudit = await loadAuditLog();
-
-    sendTo(socket, { kind: "state", state: initialState });
-    sendTo(socket, { kind: "alerts", alerts: initialAlerts });
-    sendTo(socket, { kind: "presence", users: initialPresence });
-    sendTo(socket, { kind: "audit", audit: initialAudit });
-  } catch (e) {
-    console.error("Error sending initial payload:", e);
-  }
-
-  socket.on("message", async (data) => {
-    let msg: any;
-    try {
-      msg = JSON.parse(String(data));
-    } catch { return; }
-
-    try {
-      switch (msg.kind) {
-        case "login": {
-          const u: UserMeta = {
-            session: String(msg.user.session),
-            name: String(msg.user.name),
-            role: String(msg.user.role),
-            area: String(msg.user.area || ""),
-            onDuty: Boolean(msg.user.onDuty),
-            dutyTime: String(msg.user.dutyTime || "")
-          };
-
-          if (!u.session) return;
-
-          currentSession = u.session;
-          liveSockets.set(u.session, socket);
-          userCache.set(u.session, u);
-
-          await upsertUserLogin(u);
-          await addAuditEntry({ actor: u.name, action: "login", detail: `Роль: ${u.role}` });
-          await broadcastAudit();
-
-          const freshMap = await loadUsersMeta();
-          const freshUser = freshMap.get(u.session);
-          if (freshUser) userCache.set(u.session, freshUser);
-
-          await broadcastPresence();
-          break;
-        }
-
-        case "logout": {
-          if (liveSockets.get(currentSession) === socket) {
-            liveSockets.delete(currentSession);
-          }
-          const u = userCache.get(currentSession);
-          if (u) await addAuditEntry({ actor: u.name, action: "logout" });
-          await broadcastAudit();
-          await broadcastPresence();
-          break;
-        }
-
-        case "userPatch": {
-          const targetSession = String(msg.session || "");
-          if (!targetSession) return;
-
-          const actor = userCache.get(currentSession)?.name ?? "system";
-          const target = userCache.get(targetSession)?.name ?? targetSession;
-          await patchUser(targetSession, msg.patch as Partial<UserMeta>);
-          await addAuditEntry({ actor, action: "userPatch", target, detail: JSON.stringify(msg.patch) });
-          await broadcastAudit();
-
-          const freshMap = await loadUsersMeta();
-          const freshUser = freshMap.get(targetSession);
-          if (freshUser) userCache.set(targetSession, freshUser);
-
-          await broadcastPresence();
-          break;
-        }
-
-        case "kick": {
-          const targetSession = String(msg.session || "");
-          if (!targetSession) return;
-
-          const actor = userCache.get(currentSession)?.name ?? "system";
-          const target = userCache.get(targetSession)?.name ?? targetSession;
-
-          // Закрываем соединение пользователя, если он онлайн
-          const targetSocket = liveSockets.get(targetSession);
-          if (targetSocket) {
-            targetSocket.close();
-          }
-
-          // Удаляем из кэша и БД
-          liveSockets.delete(targetSession);
-          userCache.delete(targetSession);
-          await pool.query("DELETE FROM users WHERE session = $1", [targetSession]);
-          await addAuditEntry({ actor, action: "kick", target });
-          await broadcastAudit();
-
-          await broadcastPresence();
-          break;
-        }
-
-        case "state": {
-          const actor = userCache.get(currentSession)?.name ?? "system";
-          await saveState(msg.state);
-          await addAuditEntry({ actor, action: "state_save", detail: `Поездов: ${msg.state?.trains?.length ?? 0}, Станций: ${msg.state?.stations?.length ?? 0}` });
-          await broadcastAudit();
-          await broadcastState();
-          break;
-        }
-
-        case "alertAdd": {
-          const a: Alert = {
-            id: String(msg.alert.id),
-            type: String(msg.alert.type),
-            text: String(msg.alert.text),
-            author: String(msg.alert.author),
-            createdAt: Number(msg.alert.createdAt),
-            active: msg.alert.active !== false
-          };
-          await addAlert(a);
-          await addAuditEntry({ actor: a.author, action: "alert_add", detail: a.text });
-          await broadcastAudit();
-          await broadcastAlerts();
-          break;
-        }
-
-        case "alertToggle": {
-          await toggleAlert(String(msg.id));
-          const actor = userCache.get(currentSession)?.name ?? "system";
-          await addAuditEntry({ actor, action: "alert_toggle", target: String(msg.id) });
-          await broadcastAudit();
-          await broadcastAlerts();
-          break;
-        }
-
-        case "alertRemove": {
-          await removeAlert(String(msg.id));
-          const actor = userCache.get(currentSession)?.name ?? "system";
-          await addAuditEntry({ actor, action: "alert_remove", target: String(msg.id) });
-          await broadcastAudit();
-          await broadcastAlerts();
-          break;
-        }
+  upstream.on("open", () => {
+    upstreamOpen = true;
+    for (const f of pending.splice(0)) {
+      if (clientAlive && upstream.readyState === WebSocket.OPEN) {
+        upstream.send(f.data, { binary: f.binary });
       }
-    } catch (e) {
-      console.error("WS Handler Error:", e);
     }
   });
 
-  socket.on("close", async () => {
-    if (liveSockets.get(currentSession) === socket) {
-      liveSockets.delete(currentSession);
-      userCache.delete(currentSession);
-
-      // Освобождаем слот дежурства, если пользователь был на дежурстве
-      try {
-        await pool.query(
-          "UPDATE users SET on_duty = false, duty_time = '' WHERE session = $1",
-          [currentSession]
-        );
-      } catch (e) {
-        console.error("Error releasing duty slot:", e);
-      }
-
-      await broadcastPresence();
+  upstream.on("message", (data, isBinary) => {
+    if (clientAlive && client.readyState === WebSocket.OPEN) {
+      client.send(data, { binary: !!isBinary });
     }
   });
-});
+
+  const closeBoth = () => {
+    if (!clientAlive) return;
+    clientAlive = false;
+    try { upstream.close(); } catch { /* уже закрыт */ }
+    try {
+      if (client.readyState === WebSocket.OPEN) client.close();
+    } catch { /* уже закрыт */ }
+  };
+
+  upstream.on("close", closeBoth);
+  upstream.on("error", (err) => {
+    console.error("[WS-PROXY] Rust-бэкенд недоступен:", (err as Error).message);
+    closeBoth();
+  });
+
+  client.on("message", (data, isBinary) => {
+    if (upstreamOpen && upstream.readyState === WebSocket.OPEN) {
+      upstream.send(data, { binary: !!isBinary });
+    } else {
+      pending.push({ data, binary: !!isBinary });
+    }
+  });
+  client.on("close", closeBoth);
+  client.on("error", closeBoth);
+}
+
 
 // ================= HTTP SERVER & STARTUP =================
 const app = next({ dev: DEV });
@@ -685,15 +360,16 @@ app.prepare().then(async () => {
         return;
       }
 
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        wss.emit("connection", ws, req);
+      wss.handleUpgrade(req, socket, head, (wsClient) => {
+        // Старого протокола здесь больше нет — только прокси кадров на Rust.
+        proxyWsToRust(wsClient, req.url || "/ws");
       });
     });
 
     server.listen(PORT, HOSTNAME, () => {
       console.log(`\n🚂 ГИД Урал-ВНИИЖТ запущен!`);
       console.log(`   HTTP: http://${HOSTNAME}:${PORT}`);
-      console.log(`   WS:   ws://${HOSTNAME}:${PORT}/ws\n`);
+      console.log(`   WS:   ws://${HOSTNAME}:${PORT}/ws (прокси → Rust :${process.env.BACKEND_PORT || 3001})\n`);
     });
 
   } catch (error) {

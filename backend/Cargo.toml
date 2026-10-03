@@ -1,0 +1,26 @@
+[package]
+name = "gid-backend"
+version = "0.1.0"
+edition = "2021"
+description = "ГИД Урал-ВНИИЖТ — backend: WebSocket-протокол + PostgreSQL"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
+deadpool-postgres = "0.14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures-util = "0.3"
+dotenvy = "0.15"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+argon2 = "0.5"
+password-hash = { version = "0.5", features = ["rand_core", "getrandom"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

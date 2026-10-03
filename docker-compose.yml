@@ -3,36 +3,63 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: gid
-      POSTGRES_PASSWORD: gidpass
-      POSTGRES_DB: gid
+      POSTGRES_USER: ${POSTGRES_USER:-gid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: ${POSTGRES_DB:-gid}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gid -d gid"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gid} -d ${POSTGRES_DB:-gid}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  # ВАЖНО: Имя сервиса должно быть точно 'app'
+  # ВАЖНО: имя сервиса должно быть точно 'app'
   app:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Встраивается в бандл Next.js на этапе сборки.
+        # ОСТАВЬТЕ ПУСТЫМ для обычного деплоя: тогда клиент сам
+        # подключится к тому же хосту по /ws, а прокси направит его
+        # на бэкенд. Значение нужно только если бэкенд доступен
+        # по отдельному адресу — и тогда укажите публичный, не 127.0.0.1:
+        # значение попадает в бандл и выполняется в браузере ПОСЕТИТЕЛЯ.
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      PORT: 3000          # <- Приложение слушает этот порт ВНУТРИ контейнера
+      PORT: 3000          # <- Фронтенд Next.js слушает этот порт
       HOSTNAME: 0.0.0.0
+
+      BACKEND_PORT: 3001   # <- Rust-бэкенд: логика, БД, WebSocket
+      BACKEND_HOST: 0.0.0.0
+
       DB_HOST: db
-      POSTGRES_USER: gid
-      POSTGRES_PASSWORD: gidpass
-      POSTGRES_DB: gid
+      POSTGRES_USER: ${POSTGRES_USER:-gid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: ${POSTGRES_DB:-gid}
+
+      # Первый администратор. Создаётся при первом запуске, если в базе
+      # ещё нет ни одного администратора. Пароль сохраняется только как
+      # argon2id-хеш — открытым текстом в базу не попадает.
+      GID_ADMIN_LOGIN: ${GID_ADMIN_LOGIN:?задайте логин первого администратора}
+      GID_ADMIN_PASSWORD: ${GID_ADMIN_PASSWORD:?задайте пароль первого администратора}
+      GID_ADMIN_NAME: ${GID_ADMIN_NAME:-Администратор участка}
+
+      # Разрешённые источники WebSocket, через запятую
+      GID_ALLOWED_ORIGINS: ${GID_ALLOWED_ORIGINS:-}
+    ports:
+      - "3000:3000"        # <- Фронтенд: сайт открывается наружу
+      # Бэкенд слушает только loopback хоста: наружу его не видно,
+      # но хостовый nginx (deploy/nginx.conf) ходит в него по 127.0.0.1:3001.
+      - "127.0.0.1:3001:3001"
     expose:
-      - "3000"            # <- Разрешаем доступ к порту 3000 изнутри сети Docker
+      - "3001"            # <- WebSocket-бэкенд внутри docker-сети
 
 volumes:
   pgdata:

@@ -57,9 +57,9 @@ export default function MarkModal({ stations, initialMark, onSave, onCancel, onD
       <div className="gid-grid2">
         <div className="gid-field"><label className="gid-label">Цвет</label>
           <select className="gid-select" value={form.color} onChange={(e) => set("color", e.target.value)}>
-            <option value="white"><i className="fas fa-square" /> Белый — плановое</option>
-            <option value="yellow"><i className="fas fa-square" style={{color: '#ffd000'}} /> Жёлтый — фактическое</option>
-            <option value="red"><i className="fas fa-square" style={{color: '#ff2525'}} /> Красный — передержка</option>
+            <option value="white">■ Белый — плановое</option>
+            <option value="yellow">■ Жёлтый — фактическое</option>
+            <option value="red">■ Красный — передержка</option>
           </select></div>
         <div className="gid-field"><label className="gid-label">Служба</label>
           <select className="gid-select" value={form.service} onChange={(e) => set("service", e.target.value)}>

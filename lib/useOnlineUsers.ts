@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Role, ADMIN_PASSWORD } from "./permissions";
+import { Role, Capabilities } from "./permissions";
 import { ws } from "./ws"; // Твой единый сокет-клиент
 
 export interface OnlineUser {
@@ -12,7 +12,21 @@ export interface OnlineUser {
   onDuty: boolean;
   dutyTime: string;
   lastSeen?: number;
-  isAdmin?: boolean; // true если пользователь зашёл под админом (сохраняется при смене роли)
+  /** Признак входа под паролем администратора — присваивает сервер. */
+  isAdmin?: boolean;
+  /** Логин учётной записи. Роль и права приходят из неё, не из клиента. */
+  personLogin?: string;
+}
+
+/** Учётная запись для панели администратора. Хеша пароля здесь нет и не бывает. */
+export interface PersonAccount {
+  login: string;
+  name: string;
+  role: Role;
+  isAdmin: boolean;
+  active: boolean;
+  createdAt: number;
+  createdBy: string;
 }
 
 const ME_KEY = "gid_user";
@@ -43,11 +57,93 @@ export function useOnlineUsers() {
   const [users, setUsers] = useState<OnlineUser[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
 
-  // Флаг: получили ли мы подтверждение от сервера ("hello")
-  const [isWsReady, setIsWsReady] = useState(false);
+  // Права присылает сервер после проверки пароля. Локально они не вычисляются.
+  const [caps, setCaps] = useState<Capabilities | null>(null);
+  // Признак входа с паролем админа — тоже серверный.
+  const [isAdmin, setIsAdmin] = useState(false);
+  // Список учётных записей присылает сервер администратору.
+  const [accounts, setAccounts] = useState<PersonAccount[]>([]);
+  // Обратная связь по операциям с сотрудниками: ошибки и подтверждения.
+  // Без этого отказы сервера (authError/forbidden) терялись бы молча,
+  // если в момент ответа не ожидался вход.
+  const [opError, setOpError] = useState("");
+  const [opNotice, setOpNotice] = useState("");
 
   const meRef = useRef<OnlineUser | null>(null);
-  meRef.current = me;
+  useEffect(() => { meRef.current = me; }, [me]);
+
+  // Ожидающий ответа сервера на вход — чтобы показать ошибку пароля.
+  const authWaiterRef = useRef<((err: string | null) => void) | null>(null);
+
+  // Сервер отвечает на login либо loginOk (успех), либо authError (отказ).
+  useEffect(() => {
+    const offOk = ws.on("loginOk", (m) => {
+      const user = m.user as OnlineUser | undefined;
+      if (!user?.session) return;
+      localStorage.setItem(ME_KEY, JSON.stringify(user));
+      setMe(user);
+      authWaiterRef.current?.(null);
+      authWaiterRef.current = null;
+    });
+
+    const offCaps = ws.on("capabilities", (m) => {
+      const list = (m.caps ?? []) as Capabilities;
+      setCaps(list);
+      setIsAdmin(m.isAdmin === true);
+      // Администратору сразу подтягиваем список сотрудников.
+      if ((list as readonly string[]).includes("users.manage_roles")) {
+        ws.send({ kind: "accountsList" });
+      }
+    });
+
+    const offAuth = ws.on("authError", (m) => {
+      const msg = typeof m.message === "string" ? m.message : "Вход не разрешён";
+      if (authWaiterRef.current) {
+        authWaiterRef.current(msg);
+        authWaiterRef.current = null;
+      } else {
+        // Ошибка операции (например, создание сотрудника), а не входа.
+        setOpError(msg);
+        setOpNotice("");
+      }
+    });
+
+    // Сеанс мог быть отключён админом — возвращаем форму входа.
+    const offExpired = ws.on("sessionExpired", () => {
+      localStorage.removeItem(ME_KEY);
+      setMe(null);
+      setCaps(null);
+      setIsAdmin(false);
+    });
+
+    // Ответы сервера на действия администратора.
+    const offNotice = ws.on("notice", (m) => {
+      if (typeof m.message === "string") {
+        setOpNotice(m.message);
+        setOpError("");
+      }
+    });
+
+    const offAccounts = ws.on("accounts", (m) => {
+      setAccounts((m.accounts ?? []) as PersonAccount[]);
+    });
+
+    const offForbidden = ws.on("forbidden", (m) => {
+      const msg = typeof m.message === "string" ? m.message : "Недостаточно прав";
+      setOpError(msg);
+      setOpNotice("");
+    });
+
+    return () => {
+      offOk();
+      offCaps();
+      offAuth();
+      offExpired();
+      offNotice();
+      offAccounts();
+      offForbidden();
+    };
+  }, []);
 
   // 1. Инициализация сокета и слушатели
   useEffect(() => {
@@ -56,23 +152,24 @@ export function useOnlineUsers() {
     // Слушаем приветствие от сервера — это сигнал, что канал открыт
     const offHello = ws.on("hello", () => {
       console.log("[WS] Connected and ready");
-      setIsWsReady(true);
 
-      // Если у нас уже есть сохраненная сессия в localStorage,
-      // пробуем восстановить её через сервер сейчас же
+      // Сохранённую сессию продлеваем без повторного ввода пароля —
+      // сервер сам проверит, что она живая и учётка активна.
       try {
         const saved = localStorage.getItem(ME_KEY);
         if (saved) {
           const u = JSON.parse(saved) as OnlineUser;
-          // Отправляем login только если сокет готов
-          ws.send({ kind: "login", user: toWire(u) });
+          if (u?.session) {
+            ws.send({ kind: "resume", session: u.session });
+          }
         }
       } catch {}
     });
 
     // Слушаем журнал аудита
-    const offAudit = ws.on("audit", (m: any) => {
-      const list: AuditEntry[] = (m.audit || []).map((a: any) => ({
+    const offAudit = ws.on("audit", (m) => {
+      const raw = (m.audit ?? []) as Record<string, unknown>[];
+      const list: AuditEntry[] = raw.map((a) => ({
         id: String(a.id),
         ts: Number(a.ts),
         actor: String(a.actor),
@@ -84,15 +181,18 @@ export function useOnlineUsers() {
     });
 
     // Слушаем список пользователей (presence)
-    const offPresence = ws.on("presence", (m: any) => {
-      const list: OnlineUser[] = (m.users || []).map((u: any) => ({
+    const offPresence = ws.on("presence", (m) => {
+      const raw = (m.users ?? []) as Record<string, unknown>[];
+      const list: OnlineUser[] = raw.map((u) => ({
         session: String(u.session),
-        name: String(u.name || ""),
-        role: String(u.role || "dsp") as Role,
-        area: String(u.area || ""),
+        name: String(u.name ?? ""),
+        role: String(u.role ?? "dsp") as Role,
+        area: String(u.area ?? ""),
         onDuty: Boolean(u.onDuty),
-        dutyTime: String(u.dutyTime || ""),
+        dutyTime: String(u.dutyTime ?? ""),
         lastSeen: Date.now(),
+        isAdmin: Boolean(u.isAdmin),
+        personLogin: u.personLogin ? String(u.personLogin) : undefined,
       }));
 
       // Сортировка по ролям
@@ -122,51 +222,43 @@ export function useOnlineUsers() {
     };
   }, []);
 
-  // 2. Функция ЛОГИНА (вызывается из кнопки)
-  const login = useCallback((name: string, role: Role, area: string, password: string): string | null => {
-    // Проверка пароля админа (локальная, для UX)
-    if (role === "admin" && password !== ADMIN_PASSWORD) {
-      return "Неверный пароль администратора";
-    }
+  // 2. ВХОД. Логин и пароль уходят на сервер; роль он определяет сам
+  // по учётной записи — выбрать её на клиенте нельзя.
+  const login = useCallback(
+    (loginName: string, password: string): Promise<string | null> => {
+      return new Promise<string | null>((resolve) => {
+        // Ждём вердикта сервера. Если он не придёт — снимаем ожидание по таймауту,
+        // чтобы форма не висела вечно.
+        const timer = setTimeout(() => {
+          authWaiterRef.current = null;
+          resolve("Нет ответа от сервера");
+        }, 8000);
 
-    // Создаем объект пользователя
-    const user: OnlineUser = {
-      session: "u" + Date.now() + Math.random().toString(36).slice(2, 6),
-      name,
-      role,
-      area,
-      onDuty: false,
-      dutyTime: "",
-      lastSeen: Date.now(),
-      isAdmin: role === "admin",
-    };
+        authWaiterRef.current = (err) => {
+          clearTimeout(timer);
+          // При отказе сессию не сохраняем: профиль придёт только от сервера.
+          resolve(err);
+        };
 
-    // Сохраняем локально сразу (для восстановления при перезагрузке)
-    localStorage.setItem(ME_KEY, JSON.stringify(user));
-    setMe(user); // Оптимистичное обновление UI
-
-    // ВАЖНО: Отправляем логин на сервер ТОЛЬКО если сокет готов
-    if (isWsReady) {
-      ws.send({ kind: "login", user: toWire(user) });
-    } else {
-      console.warn("[Login] WS not ready yet. Message queued.");
-      // Если сокет не готов, ws.send внутри положит сообщение в очередь
-      // и отправит его автоматически, когда соединение установится.
-      ws.send({ kind: "login", user: toWire(user) });
-    }
-
-    return null; // Успех
-  }, [isWsReady]);
+        // Если сокет ещё не готов, сообщение встанет в очередь и уйдёт при открытии.
+        ws.send({ kind: "login", login: loginName, password });
+      });
+    },
+    [],
+  );
 
   // 3. ВЫХОД
   const logout = useCallback(() => {
     const cur = meRef.current;
     if (cur) {
-      ws.send({ kind: "logout", session: cur.session });
+      ws.send({ kind: "logout" });
     }
     localStorage.removeItem(ME_KEY);
     setMe(null);
     setUsers([]);
+    setCaps(null);
+    setIsAdmin(false);
+    setAccounts([]);
   }, []);
 
   // 4. ОБНОВЛЕНИЕ СЕБЯ (дежурство и т.д.)
@@ -189,5 +281,58 @@ export function useOnlineUsers() {
     ws.send({ kind: "userPatch", session, patch });
   }, []);
 
-  return { me, users, audit, login, logout, updateMe, updateUser };
+  // 6. УЧЁТНЫЕ ЗАПИСИ. Заводит и меняет только администратор,
+  //    но проверку всё равно делает сервер — клиент лишь отправляет команду.
+  const createAccount = useCallback(
+    (loginName: string, name: string, password: string, role: Role) => {
+      ws.send({ kind: "accountCreate", login: loginName, name, password, role });
+    },
+    [],
+  );
+
+  const patchAccount = useCallback(
+    (loginName: string, patch: { name?: string; role?: Role; active?: boolean }) => {
+      ws.send({ kind: "accountPatch", login: loginName, ...patch });
+    },
+    [],
+  );
+
+  const resetAccountPassword = useCallback((loginName: string, password: string) => {
+    ws.send({ kind: "accountSetPassword", login: loginName, password });
+  }, []);
+
+  const changeOwnPassword = useCallback((current: string, next: string) => {
+    ws.send({ kind: "passwordChange", current, next });
+  }, []);
+
+  const refreshAccounts = useCallback(() => {
+    setOpError("");
+    ws.send({ kind: "accountsList" });
+  }, []);
+
+  const clearOpFeedback = useCallback(() => {
+    setOpError("");
+    setOpNotice("");
+  }, []);
+
+  return {
+    me,
+    users,
+    audit,
+    caps,
+    isAdmin,
+    accounts,
+    opError,
+    opNotice,
+    login,
+    logout,
+    updateMe,
+    updateUser,
+    createAccount,
+    patchAccount,
+    resetAccountPassword,
+    changeOwnPassword,
+    refreshAccounts,
+    clearOpFeedback,
+  };
 }
