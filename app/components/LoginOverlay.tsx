@@ -73,7 +73,7 @@ export default function LoginOverlay({ onLogin, version }: Props) {
               value={name}
               onChange={(e) => { setName(e.target.value); setErr(""); }}
               onKeyDown={(e) => e.key === "Enter" && !loading && submit()}
-              placeholder="Хуй на ны"
+              placeholder="Иванов В.В"
               autoFocus
               disabled={loading}
             />
@@ -122,7 +122,7 @@ export default function LoginOverlay({ onLogin, version }: Props) {
               value={area}
               onChange={(e) => setArea(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !loading && submit()}
-              placeholder="Горький — Москва"
+              placeholder="Ростов-Глав - Кавказская"
               disabled={loading}
             />
           </div>
