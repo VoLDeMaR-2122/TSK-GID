@@ -84,7 +84,7 @@ export default function LoginOverlay({ onLogin, version }: Props) {
           </div>
 
           <div className="gid-field">
-            <label className="gid-label">ЛОГИН (Ф.И.О.)</label>
+            <label className="gid-label">ЛОГИН</label>
             <input
               className="gid-input"
               value={login}
