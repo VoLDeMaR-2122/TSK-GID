@@ -45,15 +45,25 @@ export default function LoginOverlay({ onLogin, version }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto bg-black p-4">
-      {/* Фоновая сетка */}
+    <div
+      className="fixed inset-0 z-[100] grid place-items-center overflow-y-auto p-4"
+      style={{
+        background:
+          "radial-gradient(130% 95% at 50% 115%, rgba(128,96,24,0.38), rgba(0,0,0,0) 62%), linear-gradient(#060606, #000)",
+      }}
+    >
+      {/* Ромбовидная сетка */}
       <div
-        className="pointer-events-none fixed inset-0 opacity-[0.06]"
+        className="pointer-events-none fixed inset-0"
         style={{
           backgroundImage:
-            "linear-gradient(#0f0 1px, transparent 1px), linear-gradient(90deg, #0f0 1px, transparent 1px)",
-          backgroundSize: "60px 40px",
+            "repeating-linear-gradient(45deg, rgba(255,255,255,0.11) 0 1px, transparent 1px 62px), repeating-linear-gradient(-45deg, rgba(255,255,255,0.11) 0 1px, transparent 1px 62px)",
         }}
+      />
+      {/* Затемнение сверху, чтобы окно читалось */}
+      <div
+        className="pointer-events-none fixed inset-0"
+        style={{ background: "radial-gradient(90% 70% at 50% 30%, rgba(0,0,0,0.55), rgba(0,0,0,0) 70%)" }}
       />
 
       <div
