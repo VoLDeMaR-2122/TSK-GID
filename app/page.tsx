@@ -25,7 +25,7 @@ import Dropdown from "@/app/components/Dropdown";
  * Версия ГИДа — единая точка правки.
  * Меняешь строку ниже — новая версия подхватывается везде, где она показывается.
  */
-export const GID_VERSION = "0.5 Beta";
+export const GID_VERSION = "0.6 Beta";
 
 export default function GidUralPage() {
   const { state, setState, resetData } = useGidState();
