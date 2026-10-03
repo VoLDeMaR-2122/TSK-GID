@@ -29,7 +29,7 @@ export const GID_VERSION = "0.6 Beta";
 
 export default function GidUralPage() {
   const { state, setState, resetData } = useGidState();
-  const { me, users, audit, caps, isAdmin, accounts, rolesData, opError, opNotice, login, logout, updateMe, updateUser, createAccount, patchAccount, resetAccountPassword, changeOwnPassword, refreshAccounts, refreshRoles, setRoleCaps, clearOpFeedback } = useOnlineUsers();
+  const { me, users, audit, caps, isAdmin, accounts, rolesData, opError, opNotice, login, logout, updateMe, updateUser, createAccount, patchAccount, resetAccountPassword, deleteAccount, changeOwnPassword, refreshAccounts, refreshRoles, setRoleCaps, clearOpFeedback } = useOnlineUsers();
 
 // Права приходят с сервера. can() ниже только прячет ненужные пункты меню —
 // настоящую проверку делает бэкенд и отвечает "forbidden".
@@ -524,7 +524,7 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
         <AdminPanel role={role!} caps={caps ?? []} actorName={me.name} stations={state.stations} trains={state.trains} users={users} alerts={alerts}
           accounts={accounts} rolesData={rolesData} opError={opError} opNotice={opNotice}
           setStations={(s) => setState((p) => ({ ...p, stations: s }))} updateUser={updateUser}
-          createAccount={createAccount} patchAccount={patchAccount} resetAccountPassword={resetAccountPassword}
+          createAccount={createAccount} patchAccount={patchAccount} resetAccountPassword={resetAccountPassword} deleteAccount={deleteAccount}
           refreshAccounts={refreshAccounts} refreshRoles={refreshRoles} setRoleCaps={setRoleCaps}
           clearOpFeedback={clearOpFeedback}
           addAlert={addAlert} updateAlert={updateAlert} toggleAlert={toggleAlert} removeAlert={removeAlert}

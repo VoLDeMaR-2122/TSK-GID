@@ -70,6 +70,12 @@ enum Incoming {
         #[serde(default)]
         password: String,
     },
+    /// Удаление учётной записи — только администратору.
+    /// Владельца, себя и последнего админа удалить нельзя.
+    AccountDelete {
+        #[serde(default)]
+        login: String,
+    },
     /// Запрос актуального списка учётных записей (только администратору).
     AccountsList,
     /// Матрица прав: прочитать (только администратору).
@@ -121,6 +127,7 @@ impl Incoming {
             Self::AccountCreate { .. } => "accountCreate",
             Self::AccountPatch { .. } => "accountPatch",
             Self::AccountSetPassword { .. } => "accountSetPassword",
+            Self::AccountDelete { .. } => "accountDelete",
             Self::AccountsList => "accountsList",
             Self::RolesList => "rolesList",
             Self::RolesSet { .. } => "rolesSet",
@@ -297,6 +304,7 @@ impl Conn {
             Incoming::AccountSetPassword { login, password } => {
                 self.on_account_set_password(login, password).await
             }
+            Incoming::AccountDelete { login } => self.on_account_delete(login).await,
             Incoming::AccountsList => {
                 self.send_accounts().await;
                 Ok(())
@@ -748,6 +756,71 @@ impl Conn {
         self.send_to_self(&json!({ "kind": "notice", "message": "Пароль сброшен" }).to_string())
             .await;
         self.broadcast_audit().await;
+        Ok(())
+    }
+
+    /// Удаление учётной записи — только администратору.
+    /// Запрещено: владелец, своя учётка, последний администратор.
+    async fn on_account_delete(&mut self, login: String) -> anyhow::Result<()> {
+        if !self.allowed("users.manage_roles").await {
+            self.deny("users.manage_roles").await?;
+            return Ok(());
+        }
+
+        let normalized = accounts::normalize_login(&login);
+        if normalized.is_empty() {
+            self.reject_login("Пустой логин").await;
+            return Ok(());
+        }
+        let target = match db::find_person(&self.pool, &normalized).await? {
+            Some(p) => p,
+            None => {
+                self.reject_login("Учётная запись не найдена").await;
+                return Ok(());
+            }
+        };
+
+        if target.protected {
+            self.reject_login("Учётная запись владельца защищена").await;
+            return Ok(());
+        }
+
+        // Себя удалять нельзя: сеанс повиснет без учётки.
+        // Для ухода есть отключение, для смены — другая учётка.
+        let own = self.person_login().await;
+        if !own.is_empty() && own == normalized {
+            self.reject_login("Нельзя удалить свою учётную запись").await;
+            return Ok(());
+        }
+
+        let was_admin = target.is_admin || target.role == "admin";
+        if was_admin && target.active && db::count_active_admins(&self.pool).await? <= 1 {
+            self.reject_login("Это последний администратор — его нельзя удалить")
+                .await;
+            return Ok(());
+        }
+
+        // Сначала рвём живые сеансы, потом удаляем строки.
+        self.kick_by_person(&normalized).await;
+        db::delete_person(&self.pool, &normalized).await?;
+
+        let actor = self.actor_name().await;
+        db::add_audit(
+            &self.pool,
+            &AuditDraft {
+                actor,
+                action: "account_delete".into(),
+                target: Some(normalized),
+                detail: None,
+            },
+        )
+        .await?;
+
+        self.send_to_self(&json!({ "kind": "notice", "message": "Учётная запись удалена" }).to_string())
+            .await;
+        self.send_accounts().await;
+        self.broadcast_audit().await;
+        self.broadcast_presence().await;
         Ok(())
     }
 

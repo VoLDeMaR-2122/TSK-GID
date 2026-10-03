@@ -326,6 +326,53 @@ async function main() {
   admin.send({ kind: "accountPatch", login: alogin, active: false });
   await admin.wait("accounts").catch(() => null);
 
+  // ---- 21. Удаление учётки: создал, удалил, её больше нет ----
+  const dlogin = `del_${Date.now().toString(36)}`;
+  admin.send({ kind: "accountCreate", login: dlogin, name: "Удаляемый", password: "udalit123", role: "dsp" });
+  await admin.wait("accounts").catch(() => null);
+  admin.send({ kind: "accountDelete", login: dlogin });
+  const afterDel = await admin.wait("accounts").catch(() => null);
+  check(
+    "учётка удалена из списка",
+    !(afterDel?.accounts ?? []).some((a) => a.login === dlogin),
+    ""
+  );
+  const goneLogin = connect(URL);
+  await goneLogin.open;
+  goneLogin.send({ kind: "login", login: dlogin, password: "udalit123" });
+  const goneErr = await goneLogin.wait("authError").catch(() => null);
+  check("удалённой учётки больше нет", !!goneErr, goneErr?.message ?? "");
+  goneLogin.ws.close();
+
+  // ---- 22. Владельца удалить нельзя ----
+  admin.send({ kind: "accountDelete", login: ADMIN_LOGIN.toLowerCase() });
+  const protDel = await admin.wait("authError").catch(() => null);
+  check(
+    "владельца удалить нельзя",
+    !!protDel && /защищ/.test(protDel.message ?? ""),
+    protDel?.message ?? "нет отказа"
+  );
+
+  // ---- 23. Себя удалить нельзя ----
+  // alogin понижен и отключён в секции 20 — возвращаем права для проверки.
+  admin.send({ kind: "accountPatch", login: alogin, role: "admin", active: true });
+  await admin.wait("accounts").catch(() => null);
+  const adm3 = connect(URL);
+  await adm3.open;
+  adm3.send({ kind: "login", login: alogin, password: "adminparol123" });
+  await adm3.wait("loginOk").catch(() => null);
+  adm3.send({ kind: "accountDelete", login: alogin });
+  const selfDel = await adm3.wait("authError").catch(() => null);
+  check(
+    "себя удалить нельзя",
+    !!selfDel,
+    selfDel?.message ?? "нет отказа"
+  );
+  adm3.ws.close();
+  // Чистим за собой временную учётку.
+  admin.send({ kind: "accountDelete", login: alogin });
+  await admin.wait("accounts").catch(() => null);
+
   admin.ws.close();
 
   const failed = checks.filter((c) => !c.ok);

@@ -24,6 +24,7 @@ interface Props {
   createAccount: (login: string, name: string, password: string, role: Role) => void;
   patchAccount: (login: string, patch: { name?: string; role?: Role; active?: boolean }) => void;
   resetAccountPassword: (login: string, password: string) => void;
+  deleteAccount: (login: string) => void;
   refreshAccounts: () => void;
   refreshRoles: () => void;
   setRoleCaps: (role: string, caps: string[]) => void;
@@ -466,6 +467,16 @@ export default function AdminPanel(p: Props) {
                               p.patchAccount(a.login, { active: !a.active });
                             }}>
                             {a.active ? "Откл." : "Вкл."}
+                          </button>
+                          <button
+                            className="gid-btn gid-btn-sm gid-btn-danger ml-1"
+                            title={a.protected ? "Владелец: удалить нельзя" : "Удалить учётную запись навсегда"}
+                            disabled={a.protected}
+                            onClick={() => {
+                              if (!confirm(`Удалить учётную запись ${a.name} (${a.login}) навсегда? Отменить нельзя.`)) return;
+                              p.deleteAccount(a.login);
+                            }}>
+                            <i className="fas fa-trash-can" />
                           </button>
                         </td>
                       </tr>

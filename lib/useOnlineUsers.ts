@@ -336,6 +336,10 @@ export function useOnlineUsers() {
     ws.send({ kind: "accountSetPassword", login: loginName, password });
   }, []);
 
+  const deleteAccount = useCallback((loginName: string) => {
+    ws.send({ kind: "accountDelete", login: loginName });
+  }, []);
+
   const changeOwnPassword = useCallback((current: string, next: string) => {
     ws.send({ kind: "passwordChange", current, next });
   }, []);
@@ -378,6 +382,7 @@ export function useOnlineUsers() {
     createAccount,
     patchAccount,
     resetAccountPassword,
+    deleteAccount,
     changeOwnPassword,
     refreshAccounts,
     refreshRoles,

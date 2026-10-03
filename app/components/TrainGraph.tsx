@@ -72,16 +72,6 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
     return () => cont.removeEventListener("wheel", onWheelNative);
   }, [onZoomSet, hw]);
 
-  // Применение якоря: удерживаем точку под курсором после смены масштаба
-  useEffect(() => {
-    const a = anchorRef.current;
-    const cont = contRef.current;
-    if (!a || !cont) return;
-    const W = cont.clientWidth / state.view.hoursVisible;
-    cont.scrollLeft = Math.max(0, (a.timeMin / 60) * W - a.mouseX);
-    anchorRef.current = null;
-  }, [state.view.hoursVisible]);
-
   // Автоскролл к поезду из поиска
   useEffect(() => {
     if (!scrollTarget || !contRef.current) return;
@@ -372,6 +362,18 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
     window.addEventListener("resize", draw);
     return () => window.removeEventListener("resize", draw);
   }, [state, hoverSt, hw]);
+
+  // Применение якоря — СТРОГО после отрисовки (эффект ниже эффекта draw):
+  // канвас уже новой ширины, и scrollLeft не обрежется по старому размеру.
+  // Так точка времени под курсором остаётся на месте при Ctrl+колесо.
+  useEffect(() => {
+    const a = anchorRef.current;
+    const cont = contRef.current;
+    if (!a || !cont) return;
+    const W = cont.clientWidth / state.view.hoursVisible;
+    cont.scrollLeft = Math.max(0, (a.timeMin / 60) * W - a.mouseX);
+    anchorRef.current = null;
+  }, [state.view.hoursVisible]);
 
   // ================= HIT-TEST =================
   const hitTest = (cx: number, cy: number) => {

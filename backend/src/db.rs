@@ -480,6 +480,18 @@ pub async fn count_persons(pool: &Pool) -> Result<i64> {
     Ok(rows.first().map(|r| r.get::<_, i64>("c")).unwrap_or(0))
 }
 
+/// Удаляет учётную запись вместе с её сеансами.
+pub async fn delete_person(pool: &Pool, login: &str) -> Result<()> {
+    let client = pool.get().await?;
+    client
+        .execute("DELETE FROM users WHERE person_login = $1", &[&login])
+        .await?;
+    client
+        .execute("DELETE FROM persons WHERE login = $1", &[&login])
+        .await?;
+    Ok(())
+}
+
 /// Убирает записи сессий, созданные старой системой, где роль мог
 /// проставить себе клиент. Их person_login пуст — значит это не наши сеансы.
 /// Без чистки 14 записей с ролью admin превратились бы в настоящих админов.

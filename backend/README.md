@@ -40,8 +40,8 @@ GID_ADMIN_NAME="Заведующий участком"
 
 ### Что нельзя
 
-- тронуть владельца через панель (роль, активность, пароль);
-- отключить последнего администратора;
+- тронуть владельца через панель (роль, активность, пароль, удаление);
+- удалить свою учётку и последнего администратора;
 - сменить свой пароль без верного текущего.
 
 Новый сотрудник сначала получает роль `dsp`. Роли `dnc` и `admin` выдаёт
@@ -71,7 +71,7 @@ GID_ADMIN_LOGIN=... GID_ADMIN_PASSWORD=... node backend/auth-check.mjs ws://127.
 
 Входящие: `login` (логин+пароль), `resume` (продлить сеанс), `logout`,
 `passwordChange`, `accountCreate`, `accountPatch`, `accountSetPassword`,
-`accountsList`, `rolesList`, `rolesSet`,
+`accountDelete`, `accountsList`, `rolesList`, `rolesSet`,
 `userPatch`, `kick`, `state`, `alertAdd`, `alertUpdate`, `alertToggle`, `alertRemove`.
 
 Исходящие: `hello`, `loginOk`, `authError`, `sessionExpired`, `capabilities`,
