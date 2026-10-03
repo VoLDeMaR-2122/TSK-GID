@@ -54,12 +54,13 @@ services:
       # Разрешённые источники WebSocket, через запятую
       GID_ALLOWED_ORIGINS: ${GID_ALLOWED_ORIGINS:-}
     ports:
-      - "3000:3000"        # <- Фронтенд: сайт открывается наружу
-      # Бэкенд слушает только loopback хоста: наружу его не видно,
-      # но хостовый nginx (deploy/nginx.conf) ходит в него по 127.0.0.1:3001.
-      - "127.0.0.1:3001:3001"
-    expose:
-      - "3001"            # <- WebSocket-бэкенд внутри docker-сети
+      # Хост-публикация портов — только для прямого доступа без reverse-proxy.
+      # В Dokploy оставь HOST_FRONT_PORT/HOST_BACK_PORT пустыми: Traefik ходит
+      # во внутренние порты контейнера напрямую, а хост-порт 3000 на сервере
+      # уже занят самим Dokploy. Для ручного деплоя задай HOST_FRONT_PORT=3000
+      # и HOST_BACK_PORT=3001 — под них настроен deploy/nginx.conf.
+      - "${HOST_FRONT_PORT:+${HOST_FRONT_PORT}:}3000"
+      - "${HOST_BACK_PORT:+127.0.0.1:${HOST_BACK_PORT}:}3001"
 
 volumes:
   pgdata:
