@@ -32,7 +32,16 @@ CREATE TABLE IF NOT EXISTS persons (
   is_admin      BOOLEAN NOT NULL DEFAULT false,
   active        BOOLEAN NOT NULL DEFAULT true,
   created_at    BIGINT NOT NULL,
-  created_by    TEXT NOT NULL DEFAULT 'system'
+  created_by    TEXT NOT NULL DEFAULT 'system',
+  -- Владелец из переменных окружения. Ставится только при развёртывании,
+  -- через панель не назначается и не снимается.
+  protected     BOOLEAN NOT NULL DEFAULT false
+);
+
+-- Матрица прав ролей. Правится через панель администратора.
+CREATE TABLE IF NOT EXISTS role_caps (
+  role TEXT PRIMARY KEY,
+  caps TEXT[] NOT NULL DEFAULT '{}'
 );
 
 CREATE TABLE IF NOT EXISTS stations (
@@ -178,6 +187,13 @@ pub async fn apply_schema(pool: &Pool) -> Result<()> {
             &[],
         )
         .await?;
+    // Флаг неприкосновенности владельца — для баз, созданных раньше.
+    client
+        .execute(
+            "ALTER TABLE persons ADD COLUMN IF NOT EXISTS protected BOOLEAN NOT NULL DEFAULT false",
+            &[],
+        )
+        .await?;
 
     client.batch_execute(SCHEMA_SQL).await?;
     Ok(())
@@ -190,6 +206,10 @@ pub async fn apply_schema(pool: &Pool) -> Result<()> {
 /// запись из GID_ADMIN_LOGIN / GID_ADMIN_PASSWORD. Пароль открытым текстом
 /// в базу не попадает: сохраняется только argon2id-хеш.
 pub async fn bootstrap_first_admin(pool: &Pool) -> Result<bool> {
+    // Владелец из переменных помечается защищённым всегда — даже если
+    // администраторы уже есть. Это же закрывает базы, созданные до флага.
+    ensure_owner_protected(pool).await?;
+
     if db_count_active_admins(pool).await? > 0 {
         tracing::info!("администратор в базе уже есть — начальная настройка не требуется");
         return Ok(false);
@@ -226,6 +246,7 @@ pub async fn bootstrap_first_admin(pool: &Pool) -> Result<bool> {
         )
         .await?;
         promote_person_admin(pool, &normalized).await?;
+        set_person_protected(pool, &normalized, true).await?;
         tracing::info!(
             "начальный администратор {} обновлён из переменных окружения",
             normalized
@@ -235,12 +256,15 @@ pub async fn bootstrap_first_admin(pool: &Pool) -> Result<bool> {
 
     create_person(
         pool,
-        &normalized,
-        &display_name,
-        &password,
-        "admin",
-        true,
-        "окружение",
+        NewPerson {
+            login: &normalized,
+            name: &display_name,
+            password: &password,
+            role: "admin",
+            is_admin: true,
+            protected: true,
+            created_by: "окружение",
+        },
     )
     .await?;
     tracing::info!(
@@ -267,40 +291,94 @@ pub async fn promote_person_admin(pool: &Pool, login: &str) -> Result<()> {
     Ok(())
 }
 
+/// Ставит/снимает флаг неприкосновенности. Вызывается только из кода
+/// развёртывания (владелец) — через панель флаг не меняется никогда.
+pub async fn set_person_protected(pool: &Pool, login: &str, protected: bool) -> Result<()> {
+    let client = pool.get().await?;
+    client
+        .execute(
+            "UPDATE persons SET protected = $2 WHERE login = $1",
+            &[&login, &protected],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Помечает владельца из переменных окружения защищённым.
+/// Пароль, имя и прочее не трогает — только флаг.
+async fn ensure_owner_protected(pool: &Pool) -> Result<()> {
+    let login = match std::env::var("GID_ADMIN_LOGIN") {
+        Ok(v) if !v.trim().is_empty() => crate::accounts::normalize_login(&v),
+        _ => return Ok(()),
+    };
+    if login.is_empty() {
+        return Ok(());
+    }
+    match find_person(pool, &login).await? {
+        Some(p) if !p.protected || !p.is_admin || p.role != "admin" => {
+            set_person_protected(pool, &login, true).await?;
+            // Владелец — всегда полноправный админ: матрицей его не урезать.
+            // Активность не трогаем.
+            let client = pool.get().await?;
+            client
+                .execute(
+                    "UPDATE persons SET is_admin = true, role = 'admin' WHERE login = $1",
+                    &[&login],
+                )
+                .await?;
+            tracing::info!("учётная запись {} помечена владельцем (защищена)", login);
+        }
+        Some(_) => {}
+        None => {
+            tracing::warn!(
+                "GID_ADMIN_LOGIN={} — такой учётки нет, владелец НЕ защищён. \
+                 Заведите учётку с этим логином через панель и перезапустите сервер",
+                login
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Параметры новой учётной записи. Структурой, а не восемью
+/// аргументами — иначе clippy ругается на их число.
+pub struct NewPerson<'a> {
+    pub login: &'a str,
+    pub name: &'a str,
+    pub password: &'a str,
+    pub role: &'a str,
+    pub is_admin: bool,
+    pub protected: bool,
+    pub created_by: &'a str,
+}
+
 /// Создаёт учётную запись. Логин нормализуется, пароль хешируется.
-pub async fn create_person(
-    pool: &Pool,
-    login: &str,
-    name: &str,
-    password: &str,
-    role: &str,
-    is_admin: bool,
-    created_by: &str,
-) -> Result<crate::accounts::Person> {
-    let login = crate::accounts::normalize_login(login);
-    let hash = crate::accounts::hash_password(password)
+pub async fn create_person(pool: &Pool, p: NewPerson<'_>) -> Result<crate::accounts::Person> {
+    let login = crate::accounts::normalize_login(p.login);
+    let hash = crate::accounts::hash_password(p.password)
         .map_err(|e| anyhow::anyhow!("не удалось посчитать хеш пароля: {}", e))?;
 
     let client = pool.get().await?;
     client
         .execute(
-            "INSERT INTO persons(login, name, password_hash, role, is_admin, active, created_at, created_by) \
-             VALUES($1,$2,$3,$4,$5,true,$6,$7)",
-            &[&login, &name, &hash, &role, &is_admin, &now_ms(), &created_by],
+            "INSERT INTO persons(login, name, password_hash, role, is_admin, active, protected, created_at, created_by) \
+             VALUES($1,$2,$3,$4,$5,true,$6,$7,$8)",
+            &[&login, &p.name, &hash, &p.role, &p.is_admin, &p.protected, &now_ms(), &p.created_by],
         )
         .await?;
 
-    tracing::info!("создана учётная запись {} ({})", login, role);
+    tracing::info!("создана учётная запись {} ({})", login, p.role);
 
     Ok(crate::accounts::Person {
         login,
-        name: name.to_string(),
+        name: p.name.to_string(),
         password_hash: hash,
-        role: role.to_string(),
-        is_admin,
+        role: p.role.to_string(),
+        is_admin: p.is_admin,
         active: true,
+        protected: p.protected,
         created_at: now_ms(),
-        created_by: created_by.to_string(),
+        created_by: p.created_by.to_string(),
     })
 }
 
@@ -308,7 +386,7 @@ pub async fn find_person(pool: &Pool, login: &str) -> Result<Option<crate::accou
     let client = pool.get().await?;
     let rows = client
         .query(
-            "SELECT login, name, password_hash, role, is_admin, active, created_at, created_by \
+            "SELECT login, name, password_hash, role, is_admin, active, protected, created_at, created_by \
              FROM persons WHERE login = $1",
             &[&login],
         )
@@ -321,7 +399,7 @@ pub async fn list_persons(pool: &Pool) -> Result<Vec<crate::accounts::Person>> {
     let client = pool.get().await?;
     let rows = client
         .query(
-            "SELECT login, name, password_hash, role, is_admin, active, created_at, created_by \
+            "SELECT login, name, password_hash, role, is_admin, active, protected, created_at, created_by \
              FROM persons ORDER BY is_admin DESC, name",
             &[],
         )
@@ -337,6 +415,7 @@ fn person_from_row(r: &Row) -> crate::accounts::Person {
         role: r.get("role"),
         is_admin: r.get("is_admin"),
         active: r.get("active"),
+        protected: r.get("protected"),
         created_at: r.get("created_at"),
         created_by: r.get("created_by"),
     }
@@ -380,11 +459,13 @@ pub async fn patch_person(
 }
 
 /// Число активных администраторов — нужно, чтобы не остаться без прав.
+/// Считаются и владельцы (is_admin), и назначенные (role = 'admin').
 pub async fn count_active_admins(pool: &Pool) -> Result<i64> {
     let client = pool.get().await?;
     let rows = client
         .query(
-            "SELECT COUNT(*)::bigint AS c FROM persons WHERE is_admin = true AND active = true",
+            "SELECT COUNT(*)::bigint AS c FROM persons \
+             WHERE (is_admin = true OR role = 'admin') AND active = true",
             &[],
         )
         .await?;
@@ -408,6 +489,54 @@ pub async fn purge_legacy_users(pool: &Pool) -> Result<u64> {
         .execute("DELETE FROM users WHERE person_login = ''", &[])
         .await?;
     Ok(deleted)
+}
+
+// ================= МАТРИЦА ПРАВ =================
+
+/// Читает матрицу из базы. Пустые роли добиваются значениями
+/// по умолчанию уже в кеше (permissions::init_role_caps).
+pub async fn load_role_caps(pool: &Pool) -> Result<std::collections::HashMap<String, Vec<String>>> {
+    let client = pool.get().await?;
+    let rows = client.query("SELECT role, caps FROM role_caps", &[]).await?;
+    let mut map = std::collections::HashMap::new();
+    for r in rows {
+        map.insert(r.get::<_, String>("role"), r.get::<_, Vec<String>>("caps"));
+    }
+    Ok(map)
+}
+
+/// Сохраняет права роли. Неизвестные действия отбрасываются,
+/// у роли admin право users.manage_roles снять нельзя.
+pub async fn set_role_caps(pool: &Pool, role: &str, caps: &[String]) -> Result<()> {
+    let clean: Vec<String> = caps
+        .iter()
+        .filter(|a| crate::permissions::is_known_action(a))
+        .cloned()
+        .collect();
+    let client = pool.get().await?;
+    client
+        .execute(
+            "INSERT INTO role_caps(role, caps) VALUES($1,$2) \
+             ON CONFLICT(role) DO UPDATE SET caps = EXCLUDED.caps",
+            &[&role, &clean],
+        )
+        .await?;
+    Ok(())
+}
+
+/// Заливает значения по умолчанию для ролей, которых ещё нет в таблице.
+/// Существующие настройки не трогает.
+pub async fn seed_role_caps(pool: &Pool) -> Result<()> {
+    let client = pool.get().await?;
+    for (role, caps) in crate::permissions::default_caps_map() {
+        client
+            .execute(
+                "INSERT INTO role_caps(role, caps) VALUES($1,$2) ON CONFLICT(role) DO NOTHING",
+                &[&role, &caps],
+            )
+            .await?;
+    }
+    Ok(())
 }
 
 // ================= ЧТЕНИЕ СОСТОЯНИЯ =================

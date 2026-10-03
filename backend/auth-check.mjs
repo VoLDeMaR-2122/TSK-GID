@@ -204,12 +204,12 @@ async function main() {
   const nowDnc = (patched?.accounts ?? []).find((a) => a.login === login);
   check("роль повышена до ДНЦ", nowDnc?.role === "dnc", `роль=${nowDnc?.role}`);
 
-  // ---- 13. Последнего администратора отключить нельзя ----
+  // ---- 13. Владелец неприкосновенен: отключить нельзя ----
   admin.send({ kind: "accountPatch", login: ADMIN_LOGIN.toLowerCase(), active: false });
   const keepAdmin = await admin.wait("authError").catch(() => null);
   check(
-    "последнего администратора не отключить",
-    !!keepAdmin,
+    "владельца отключить нельзя",
+    !!keepAdmin && /защищ/.test(keepAdmin.message ?? ""),
     keepAdmin?.message ?? "отсутствует защита"
   );
 
@@ -231,6 +231,100 @@ async function main() {
   const blockedErr = await blocked.wait("authError").catch(() => null);
   check("отключённый не входит", !!blockedErr, blockedErr?.message ?? "");
   blocked.ws.close();
+
+  // ---- 16. Назначение администратора через панель ----
+  const alogin = `admin_${Date.now().toString(36)}`;
+  admin.send({
+    kind: "accountCreate",
+    login: alogin,
+    name: "Админ Тестовый",
+    password: "adminparol123",
+    role: "admin",
+  });
+  const acreated = await admin.wait("accounts").catch(() => null);
+  const afound = (acreated?.accounts ?? []).find((a) => a.login === alogin);
+  check(
+    "администратор заведён через панель",
+    !!afound && afound.role === "admin" && afound.protected === false,
+    afound ? `роль=${afound.role}, protected=${afound.protected}` : "нет в списке"
+  );
+
+  // ---- 17. Вход назначенного администратора ----
+  const adm2 = connect(URL);
+  await adm2.open;
+  adm2.send({ kind: "login", login: alogin, password: "adminparol123" });
+  const adm2Ok = await adm2.wait("loginOk").catch(() => null);
+  check("назначенный админ вошёл", !!adm2Ok, "");
+  const adm2Caps = await adm2.wait("capabilities").catch(() => null);
+  check(
+    "у назначенного админа есть управление ролями",
+    (adm2Caps?.caps ?? []).includes("users.manage_roles"),
+    `прав: ${(adm2Caps?.caps ?? []).length}`
+  );
+
+  // ---- 18. Назначенный админ не может тронуть владельца ----
+  adm2.send({ kind: "accountPatch", login: ADMIN_LOGIN.toLowerCase(), role: "dsp" });
+  const protRole = await adm2.wait("authError").catch(() => null);
+  check(
+    "владельца нельзя понизить",
+    !!protRole && /защищ/.test(protRole.message ?? ""),
+    protRole?.message ?? "нет отказа"
+  );
+  adm2.send({ kind: "accountSetPassword", login: ADMIN_LOGIN.toLowerCase(), password: "vzlom123456" });
+  const protPw = await adm2.wait("authError").catch(() => null);
+  check(
+    "владельцу нельзя сбросить пароль",
+    !!protPw && /защищ/.test(protPw.message ?? ""),
+    protPw?.message ?? "нет отказа"
+  );
+  adm2.ws.close();
+
+  // ---- 19. Матрица прав: чтение, запись, защита ----
+  admin.send({ kind: "rolesList" });
+  const roles0 = await admin.wait("roles").catch(() => null);
+  const acts = roles0?.actions ?? [];
+  const rmap = roles0?.roles ?? {};
+  check(
+    "матрица отдаётся: 9 действий, 3 роли",
+    acts.length === 9 && !!rmap.admin && !!rmap.dnc && !!rmap.dsp,
+    `действий=${acts.length}`
+  );
+  const dspOrig = [...(rmap.dsp ?? [])];
+  admin.send({ kind: "rolesSet", role: "dsp", caps: (rmap.dsp ?? []).filter((a) => a !== "stats.view") });
+  await admin.wait("notice").catch(() => null);
+  admin.send({ kind: "rolesList" });
+  const roles1 = await admin.wait("roles").catch(() => null);
+  check(
+    "право у ДСП забрано и сохранено",
+    !(roles1?.roles?.dsp ?? []).includes("stats.view"),
+    ""
+  );
+  // Возвращаем как было, чтобы не ломать остальное.
+  admin.send({ kind: "rolesSet", role: "dsp", caps: dspOrig });
+  await admin.wait("notice").catch(() => null);
+  admin.send({ kind: "rolesList" });
+  const roles2 = await admin.wait("roles").catch(() => null);
+  check(
+    "матрица восстановлена",
+    (roles2?.roles?.dsp ?? []).includes("stats.view"),
+    ""
+  );
+  // У админа управление ролями снять нельзя.
+  admin.send({ kind: "rolesSet", role: "admin", caps: (rmap.admin ?? []).filter((a) => a !== "users.manage_roles") });
+  const lockErr = await admin.wait("authError").catch(() => null);
+  check(
+    "у админа нельзя забрать управление ролями",
+    !!lockErr,
+    lockErr?.message ?? "нет отказа"
+  );
+
+  // ---- 20. Назначенного админа можно понизить и отключить ----
+  admin.send({ kind: "accountPatch", login: alogin, role: "dsp" });
+  const demoted = await admin.wait("accounts").catch(() => null);
+  const dem = (demoted?.accounts ?? []).find((a) => a.login === alogin);
+  check("назначенный админ понижен до ДСП", dem?.role === "dsp", `роль=${dem?.role}`);
+  admin.send({ kind: "accountPatch", login: alogin, active: false });
+  await admin.wait("accounts").catch(() => null);
 
   admin.ws.close();
 

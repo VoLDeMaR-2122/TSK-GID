@@ -115,6 +115,25 @@ impl Hub {
             .collect()
     }
 
+    /// Все сеансы роли — чтобы дослать новые права после правки матрицы.
+    pub async fn sessions_of_role(&self, role: &str) -> Vec<String> {
+        let inner = self.inner.lock().await;
+        inner
+            .users
+            .iter()
+            .filter(|(_, u)| u.role == role)
+            .map(|(s, _)| s.clone())
+            .collect()
+    }
+
+    /// Точечная отправка одному сеансу (личные уведомления, новые права).
+    pub async fn send_to(&self, session: &str, payload: &str) {
+        let inner = self.inner.lock().await;
+        if let Some(tx) = inner.sockets.get(session) {
+            let _ = tx.send(payload.to_string());
+        }
+    }
+
     /// Закрывает соединение клиента (kick).
     pub async fn close_session(&self, session: &str) {
         let mut inner = self.inner.lock().await;

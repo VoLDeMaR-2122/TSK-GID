@@ -25,8 +25,16 @@ export interface PersonAccount {
   role: Role;
   isAdmin: boolean;
   active: boolean;
+  /** Владелец из переменных окружения — панелью не трогается. */
+  protected: boolean;
   createdAt: number;
   createdBy: string;
+}
+
+/** Матрица прав ролей с сервера для редактора. */
+export interface RolesData {
+  actions: string[];
+  roles: Record<string, string[]>;
 }
 
 const ME_KEY = "gid_user";
@@ -63,6 +71,8 @@ export function useOnlineUsers() {
   const [isAdmin, setIsAdmin] = useState(false);
   // Список учётных записей присылает сервер администратору.
   const [accounts, setAccounts] = useState<PersonAccount[]>([]);
+  // Матрица прав ролей присылает сервер администратору.
+  const [rolesData, setRolesData] = useState<RolesData | null>(null);
   // Обратная связь по операциям с сотрудниками: ошибки и подтверждения.
   // Без этого отказы сервера (authError/forbidden) терялись бы молча,
   // если в момент ответа не ожидался вход.
@@ -90,9 +100,10 @@ export function useOnlineUsers() {
       const list = (m.caps ?? []) as Capabilities;
       setCaps(list);
       setIsAdmin(m.isAdmin === true);
-      // Администратору сразу подтягиваем список сотрудников.
+      // Администратору сразу подтягиваем список сотрудников и матрицу прав.
       if ((list as readonly string[]).includes("users.manage_roles")) {
         ws.send({ kind: "accountsList" });
+        ws.send({ kind: "rolesList" });
       }
     });
 
@@ -125,7 +136,29 @@ export function useOnlineUsers() {
     });
 
     const offAccounts = ws.on("accounts", (m) => {
-      setAccounts((m.accounts ?? []) as PersonAccount[]);
+      const raw = (m.accounts ?? []) as Record<string, unknown>[];
+      setAccounts(
+        raw.map((a) => ({
+          login: String(a.login ?? ""),
+          name: String(a.name ?? ""),
+          role: String(a.role ?? "dsp") as Role,
+          isAdmin: a.isAdmin === true,
+          active: a.active !== false,
+          protected: a.protected === true,
+          createdAt: Number(a.createdAt) || 0,
+          createdBy: String(a.createdBy ?? ""),
+        })),
+      );
+    });
+
+    const offRoles = ws.on("roles", (m) => {
+      const actions = Array.isArray(m.actions) ? m.actions.map(String) : [];
+      const roles: Record<string, string[]> = {};
+      const raw = (m.roles ?? {}) as Record<string, unknown>;
+      for (const [role, caps] of Object.entries(raw)) {
+        roles[role] = Array.isArray(caps) ? caps.map(String) : [];
+      }
+      setRolesData({ actions, roles });
     });
 
     const offForbidden = ws.on("forbidden", (m) => {
@@ -141,6 +174,7 @@ export function useOnlineUsers() {
       offExpired();
       offNotice();
       offAccounts();
+      offRoles();
       offForbidden();
     };
   }, []);
@@ -259,6 +293,7 @@ export function useOnlineUsers() {
     setCaps(null);
     setIsAdmin(false);
     setAccounts([]);
+    setRolesData(null);
   }, []);
 
   // 4. ОБНОВЛЕНИЕ СЕБЯ (дежурство и т.д.)
@@ -315,6 +350,17 @@ export function useOnlineUsers() {
     setOpNotice("");
   }, []);
 
+  // 7. МАТРИЦА ПРАВ. Редактирует только администратор,
+  //    проверка и применение — на сервере.
+  const refreshRoles = useCallback(() => {
+    setOpError("");
+    ws.send({ kind: "rolesList" });
+  }, []);
+
+  const setRoleCaps = useCallback((role: string, caps: string[]) => {
+    ws.send({ kind: "rolesSet", role, caps });
+  }, []);
+
   return {
     me,
     users,
@@ -322,6 +368,7 @@ export function useOnlineUsers() {
     caps,
     isAdmin,
     accounts,
+    rolesData,
     opError,
     opNotice,
     login,
@@ -333,6 +380,8 @@ export function useOnlineUsers() {
     resetAccountPassword,
     changeOwnPassword,
     refreshAccounts,
+    refreshRoles,
+    setRoleCaps,
     clearOpFeedback,
   };
 }

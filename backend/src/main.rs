@@ -19,18 +19,11 @@ use crate::hub::Hub;
 #[tokio::main]
 async fn main() -> Result<()> {
     // Переменные из .env.local — как у Node-сервера.
-    // Файл лежит в корне репозитория, а крейт собирается из backend/,
-    // поэтому проверяем оба пути.
-    let mut loaded = false;
-    for path in [".env.local", "../.env.local"] {
-        if dotenvy::from_path(path).is_ok() {
-            loaded = true;
-            break;
-        }
-    }
-    if !loaded {
-        let _ = dotenvy::dotenv();
-    }
+    // Файл лежит в корне репозитория, а запускаться можно откуда угодно,
+    // поэтому ищем по абсолютным путям: от CWD, от родителя CWD и вверх
+    // от папки бинарника. Относительным путям не доверяем.
+    // Загрузка — после init логгера, чтобы ошибки было видно.
+    let env_path = find_env_file();
 
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -58,6 +51,37 @@ async fn main() -> Result<()> {
         port,
         allowed_origins
     );
+    if let Some(path) = &env_path {
+        // Грузим построчно, а не from_path: одна битая строка (например,
+        // значение с пробелом без кавычек) не должна ронять весь файл.
+        // Значения с пробелами — только в кавычках: LOGIN="Иванов И.И.".
+        match dotenvy::from_path_iter(path) {
+            Ok(iter) => {
+                for item in iter {
+                    match item {
+                        Ok((k, v)) => {
+                            if std::env::var(&k).is_err() {
+                                std::env::set_var(&k, v);
+                            }
+                        }
+                        Err(e) => tracing::warn!("пропуск битой строки .env: {}", e),
+                    }
+                }
+            }
+            Err(e) => tracing::warn!("не удалось загрузить {}: {}", path.display(), e),
+        }
+    } else {
+        let _ = dotenvy::dotenv();
+    }
+    tracing::info!(
+        "конфиг: env-файл={}, cwd={:?}, GID_ADMIN_LOGIN={}",
+        env_path
+            .as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "(не найден)".into()),
+        std::env::current_dir(),
+        std::env::var("GID_ADMIN_LOGIN").unwrap_or_else(|_| "(не задан)".into()),
+    );
     let pool = db::build_pool(&std::env::var("DATABASE_URL").unwrap_or_default())?;
     db::wait_for_db(&pool, 20, 2000).await?;
     db::apply_schema(&pool).await?;
@@ -65,6 +89,12 @@ async fn main() -> Result<()> {
     if db::seed_if_empty(&pool).await? {
         tracing::info!("🌱 БД заполнена начальными данными");
     }
+
+    // Матрица прав: заливаем значения по умолчанию для новых ролей,
+    // читаем из базы в кеш. Дальше её правит администратор через панель.
+    db::seed_role_caps(&pool).await?;
+    let role_caps = db::load_role_caps(&pool).await?;
+    permissions::init_role_caps(role_caps);
 
     // Первый администратор — из переменных окружения (GID_ADMIN_LOGIN/PASSWORD).
     db::bootstrap_first_admin(&pool).await?;
@@ -107,4 +137,32 @@ async fn main() -> Result<()> {
 
 async fn health() -> &'static str {
     "ok"
+}
+
+/// Ищет .env.local: сначала рядом с CWD, потом вверх от папки бинарника.
+/// Возвращает первый существующий файл.
+fn find_env_file() -> Option<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join(".env.local"));
+        if let Some(parent) = cwd.parent() {
+            candidates.push(parent.join(".env.local"));
+        }
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.parent().map(|p| p.to_path_buf());
+        for _ in 0..5 {
+            match dir {
+                Some(d) => {
+                    candidates.push(d.join(".env.local"));
+                    dir = d.parent().map(|p| p.to_path_buf());
+                }
+                None => break,
+            }
+        }
+    }
+
+    candidates.into_iter().find(|p| p.is_file())
 }

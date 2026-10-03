@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
 import { Station, Train, CAT_NAMES, CAT_COLORS } from "@/lib/types";
-import { OnlineUser, PersonAccount } from "@/lib/useOnlineUsers";
+import { OnlineUser, PersonAccount, RolesData } from "@/lib/useOnlineUsers";
 import { Alert } from "@/lib/useAlerts";
 import { renderAlertBody } from "@/lib/alertFormat";
 import { Role, ROLE_NAMES, ROLE_SHORT, Action, Capabilities, canManageRole } from "@/lib/permissions";
@@ -16,6 +16,7 @@ interface Props {
   users: OnlineUser[];
   alerts: Alert[];
   accounts: PersonAccount[];
+  rolesData: RolesData | null;
   opError: string;
   opNotice: string;
   setStations: (s: Station[]) => void;
@@ -24,6 +25,8 @@ interface Props {
   patchAccount: (login: string, patch: { name?: string; role?: Role; active?: boolean }) => void;
   resetAccountPassword: (login: string, password: string) => void;
   refreshAccounts: () => void;
+  refreshRoles: () => void;
+  setRoleCaps: (role: string, caps: string[]) => void;
   clearOpFeedback: () => void;
   addAlert: (type: Alert["type"], title: string, text: string, full: string, author: string) => void;
   updateAlert: (alert: Pick<Alert, "id" | "type" | "title" | "text" | "full">) => void;
@@ -34,8 +37,22 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "stations" | "users" | "staff" | "alerts" | "trains";
+type Tab = "stations" | "users" | "staff" | "rights" | "alerts" | "trains";
 const uid = () => "s" + Math.random().toString(36).slice(2, 10);
+
+const ACTION_LABELS: Record<string, string> = {
+  "stations.manage": "Станции",
+  "trains.manage": "Нитки поездов",
+  "trains.mark": "Отметки времени",
+  "marks.manage": "Пометки и окна",
+  "alerts.manage": "Оповещения",
+  "users.manage_dsp": "Дежурство ДСП",
+  "users.manage_roles": "Роли и права",
+  "stats.view": "Статистика",
+  "admin.panel": "Админ-панель",
+};
+
+const ROLE_ORDER: Role[] = ["admin", "dnc", "dsp"];
 
 export default function AdminPanel(p: Props) {
   // Права от сервера: только отображение, реальная проверка — на бэкенде.
@@ -45,6 +62,7 @@ export default function AdminPanel(p: Props) {
     { key: "stations", label: <><i className="fas fa-industry" /> Станции</>, show: can("stations.manage") },
     { key: "users", label: <><i className="fas fa-users" /> Персонал</>, show: can("users.manage_dsp") || isSuperAdmin },
     { key: "staff", label: <><i className="fas fa-id-card" /> Сотрудники</>, show: isSuperAdmin },
+    { key: "rights", label: <><i className="fas fa-key" /> Права</>, show: isSuperAdmin },
     { key: "alerts", label: <><i className="fas fa-bell" /> Оповещения</>, show: can("alerts.manage") },
     { key: "trains", label: <><i className="fas fa-train" /> Поезда</>, show: can("trains.manage") },
   ];
@@ -61,6 +79,7 @@ export default function AdminPanel(p: Props) {
     p.clearOpFeedback();
     setTab(t);
     if (t === "staff") p.refreshAccounts();
+    if (t === "rights") p.refreshRoles();
   };
 
   // Станции
@@ -314,7 +333,9 @@ export default function AdminPanel(p: Props) {
         <div>
           <div className="text-[10px] text-[#666] mb-2">
             Учётные записи для входа: логин (Ф.И.О.) и пароль выдаёте вы.
-            Роль администратора через панель не выдаётся. Отключение срабатывает сразу — сотрудник выкидывается из системы.
+            Назначенного администратора может понизить другой администратор.
+            Владелец из переменных окружения помечен щитом — его трогать нельзя.
+            Отключение срабатывает сразу — сотрудник выкидывается из системы.
           </div>
 
           {p.opError && (
@@ -363,6 +384,7 @@ export default function AdminPanel(p: Props) {
                 <select className="gid-select" value={newRole} onChange={(e) => setNewRole(e.target.value as Role)}>
                   <option value="dsp">{ROLE_NAMES.dsp}</option>
                   <option value="dnc">{ROLE_NAMES.dnc}</option>
+                  <option value="admin">{ROLE_NAMES.admin}</option>
                 </select>
               </div>
             </div>
@@ -388,19 +410,26 @@ export default function AdminPanel(p: Props) {
                     <React.Fragment key={a.login}>
                       <tr className={a.active ? "" : "opacity-60"}>
                         <td>
-                          <div className="font-bold text-[#ddd]">{a.name}</div>
+                          <div className="font-bold text-[#ddd]">
+                            {a.name}
+                            {a.protected && (
+                              <span className="text-[9px] text-[#fd6] ml-1.5" title="Владелец из переменных окружения — изменить нельзя">
+                                <i className="fas fa-shield-halved" /> владелец
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[#666] text-[10px] font-mono">{a.login}</div>
                         </td>
                         <td>
                           <select className="gid-select !w-auto !py-0.5" value={a.role}
-                            disabled={a.isAdmin}
-                            title={a.isAdmin ? "Роль администратора меняется только переменными окружения" : "Сменить роль"}
+                            disabled={a.protected}
+                            title={a.protected ? "Владелец: роль не меняется" : "Сменить роль"}
                             onChange={(e) => p.patchAccount(a.login, { role: e.target.value as Role })}>
                             <option value="dsp">{ROLE_SHORT.dsp}</option>
                             <option value="dnc">{ROLE_SHORT.dnc}</option>
-                            {a.isAdmin && <option value="admin">{ROLE_SHORT.admin}</option>}
+                            <option value="admin">{ROLE_SHORT.admin}</option>
                           </select>
-                          {a.isAdmin && <div className="text-[9px] text-[#f8f] mt-0.5"><i className="fas fa-shield-halved" /> админ</div>}
+                          {a.isAdmin && !a.protected && <div className="text-[9px] text-[#f8f] mt-0.5"><i className="fas fa-shield-halved" /> админ</div>}
                         </td>
                         <td>
                           <span className={`gid-chip ${a.active ? "gid-chip-dsp" : "gid-chip-op"}`}>
@@ -409,7 +438,8 @@ export default function AdminPanel(p: Props) {
                         </td>
                         <td className="text-right whitespace-nowrap">
                           <button className="gid-btn gid-btn-sm mr-1"
-                            title="Переименовать"
+                            title={a.protected ? "Владелец: переименование недоступно" : "Переименовать"}
+                            disabled={a.protected}
                             onClick={() => {
                               p.clearOpFeedback();
                               if (nameTarget === a.login) { setNameTarget(""); setNameValue(""); }
@@ -418,7 +448,8 @@ export default function AdminPanel(p: Props) {
                             <i className="fas fa-pen" />
                           </button>
                           <button className="gid-btn gid-btn-sm mr-1"
-                            title="Сбросить пароль"
+                            title={a.protected ? "Владелец: сброс пароля недоступен" : "Сбросить пароль"}
+                            disabled={a.protected}
                             onClick={() => {
                               p.clearOpFeedback();
                               if (pwTarget === a.login) { setPwTarget(""); setPwValue(""); setPwShow(false); }
@@ -428,7 +459,8 @@ export default function AdminPanel(p: Props) {
                           </button>
                           <button
                             className={`gid-btn gid-btn-sm ${a.active ? "gid-btn-danger" : ""}`}
-                            title={a.active ? "Отключить (выкинет из системы)" : "Включить"}
+                            title={a.protected ? "Владелец: отключить нельзя" : (a.active ? "Отключить (выкинет из системы)" : "Включить")}
+                            disabled={a.protected}
                             onClick={() => {
                               if (a.active && !confirm(`Отключить ${a.name}? Он сразу выйдет из системы.`)) return;
                               p.patchAccount(a.login, { active: !a.active });
@@ -489,6 +521,90 @@ export default function AdminPanel(p: Props) {
               </table>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ПРАВА — матрица «роль → действия» */}
+      {activeTab === "rights" && isSuperAdmin && (
+        <div>
+          <div className="text-[10px] text-[#666] mb-2">
+            Что разрешено каждой роли. Применяется сразу всем онлайн —
+            перезаходить не нужно. У роли администратора право «Роли и права»
+            снять нельзя. Владелец из переменных окружения матрицей не ограничен.
+          </div>
+
+          {p.opError && (
+            <div className="text-[11px] text-[#f88] border border-[#5a1a1a] bg-[#1a0a0a] px-2.5 py-2 mb-2">
+              <i className="fas fa-triangle-exclamation" /> {p.opError}
+            </div>
+          )}
+          {p.opNotice && (
+            <div className="text-[11px] text-[#8f8] border border-[#0a5a2a] bg-[#0a1f0a] px-2.5 py-2 mb-2">
+              <i className="fas fa-check" /> {p.opNotice}
+            </div>
+          )}
+
+          {!p.rolesData ? (
+            <div className="text-center text-[#555] py-6">
+              <div className="mb-2 text-[11px]">Матрица ещё не загружена</div>
+              <button className="gid-btn gid-btn-sm" onClick={() => p.refreshRoles()}>
+                <i className="fas fa-rotate" /> Загрузить
+              </button>
+            </div>
+          ) : (
+            <div className="border border-[#2a2a2a] overflow-hidden">
+              <div className="max-h-[320px] overflow-y-auto">
+                <table className="gid-table">
+                  <thead>
+                    <tr>
+                      <th>Право</th>
+                      {ROLE_ORDER.map((r) => (
+                        <th key={r} className="text-center">{ROLE_SHORT[r]}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {p.rolesData.actions.map((action) => (
+                      <tr key={action}>
+                        <td>
+                          <div className="text-[#ddd]">{ACTION_LABELS[action] ?? action}</div>
+                          <div className="text-[#555] text-[9px] font-mono">{action}</div>
+                        </td>
+                        {ROLE_ORDER.map((r) => {
+                          const has = (p.rolesData?.roles[r] ?? []).includes(action);
+                          const locked = r === "admin" && action === "users.manage_roles";
+                          return (
+                            <td key={r} className="text-center">
+                              <input
+                                type="checkbox"
+                                checked={has}
+                                disabled={locked}
+                                title={
+                                  locked
+                                    ? "У администратора это право снять нельзя"
+                                    : has
+                                      ? "Нажмите, чтобы запретить"
+                                      : "Нажмите, чтобы разрешить"
+                                }
+                                className="w-3.5 h-3.5 accent-[#0f0] cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                                onChange={() => {
+                                  const cur = p.rolesData?.roles[r] ?? [];
+                                  const next = has
+                                    ? cur.filter((a) => a !== action)
+                                    : [...cur, action];
+                                  p.setRoleCaps(r, next);
+                                }}
+                              />
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

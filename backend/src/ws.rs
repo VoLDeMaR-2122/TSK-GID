@@ -72,6 +72,15 @@ enum Incoming {
     },
     /// Запрос актуального списка учётных записей (только администратору).
     AccountsList,
+    /// Матрица прав: прочитать (только администратору).
+    RolesList,
+    /// Матрица прав: записать права роли (только администратору).
+    RolesSet {
+        #[serde(default)]
+        role: String,
+        #[serde(default)]
+        caps: Vec<String>,
+    },
     UserPatch {
         #[serde(default)]
         session: String,
@@ -113,6 +122,8 @@ impl Incoming {
             Self::AccountPatch { .. } => "accountPatch",
             Self::AccountSetPassword { .. } => "accountSetPassword",
             Self::AccountsList => "accountsList",
+            Self::RolesList => "rolesList",
+            Self::RolesSet { .. } => "rolesSet",
             Self::UserPatch { .. } => "userPatch",
             Self::Kick { .. } => "kick",
             Self::State { .. } => "state",
@@ -290,6 +301,11 @@ impl Conn {
                 self.send_accounts().await;
                 Ok(())
             }
+            Incoming::RolesList => {
+                self.send_roles().await;
+                Ok(())
+            }
+            Incoming::RolesSet { role, caps } => self.on_roles_set(role, caps).await,
             Incoming::UserPatch { session, patch } => self.on_user_patch(session, patch).await,
             Incoming::Kick { session } => self.on_kick(session).await,
             Incoming::State { state } => self.on_state(state).await,
@@ -444,6 +460,8 @@ impl Conn {
         // Администратору сразу отдаём список сотрудников, чтобы панель
         // не показывала пустую таблицу до первого действия.
         self.send_accounts().await;
+        // И матрицу прав для редактора.
+        self.send_roles().await;
 
         db::add_audit(
             &self.pool,
@@ -542,14 +560,13 @@ impl Conn {
             return Ok(());
         }
 
-        // Роль сверяется с серверным списком и понижается до dsp.
+        // Роль сверяется с серверным списком. Назначать админа через панель
+        // можно: это обычный администратор (не владелец), его в любой момент
+        // может понизить другой админ. Владельцем так не стать и не перестать быть.
         let role = match permissions::Role::parse_checked(&role) {
             Ok(r) => r.as_str_str(),
             Err(_) => "dsp",
         };
-        // Админом через панель не назначают — только при развёртывании
-        // переменными окружения либо повышением существующего админа.
-        let role = if role == "admin" { "dnc" } else { role };
 
         if db::find_person(&self.pool, &normalized).await?.is_some() {
             self.reject_login("Такая учётная запись уже есть").await;
@@ -559,12 +576,15 @@ impl Conn {
         let actor = self.actor_name().await;
         db::create_person(
             &self.pool,
-            &normalized,
-            &name,
-            &password,
-            role,
-            false,
-            &actor,
+            db::NewPerson {
+                login: &normalized,
+                name: &name,
+                password: &password,
+                role,
+                is_admin: false,
+                protected: false,
+                created_by: &actor,
+            },
         )
         .await?;
 
@@ -610,6 +630,13 @@ impl Conn {
             }
         };
 
+        // Владелец неприкосновенен: через панель его не трогает никто,
+        // включая его самого. Свой пароль он меняет отдельно.
+        if target.protected {
+            self.reject_login("Учётная запись владельца защищена").await;
+            return Ok(());
+        }
+
         // Кому админ управлять не может.
         let actor_role = self.hub.user_name_role(&self.session).await;
         let actor_admin = self.hub.user_is_admin(&self.session).await;
@@ -627,15 +654,14 @@ impl Conn {
                 self.reject_login("Неизвестная роль").await;
                 return Ok(());
             }
-            if r == "admin" {
-                self.reject_login("Роль администратора выдаётся только переменными окружения")
-                    .await;
-                return Ok(());
-            }
         }
 
         // Нельзя оставить систему без единого администратора.
-        let loses_admin = target.is_admin && (active == Some(false) || role.is_some());
+        // Админом считается и владелец, и назначенный (role = 'admin'):
+        // снимаем галочку, только если админы останутся.
+        let was_admin = target.is_admin || target.role == "admin";
+        let new_role = role.clone().unwrap_or_else(|| target.role.clone());
+        let loses_admin = was_admin && (new_role != "admin" || active == Some(false));
         if loses_admin && db::count_active_admins(&self.pool).await? <= 1 {
             self.reject_login("Это последний администратор — его нельзя отключить")
                 .await;
@@ -693,8 +719,15 @@ impl Conn {
         }
 
         let normalized = accounts::normalize_login(&login);
-        if db::find_person(&self.pool, &normalized).await?.is_none() {
-            self.reject_login("Учётная запись не найдена").await;
+        let target = match db::find_person(&self.pool, &normalized).await? {
+            Some(p) => p,
+            None => {
+                self.reject_login("Учётная запись не найдена").await;
+                return Ok(());
+            }
+        };
+        if target.protected {
+            self.reject_login("Учётная запись владельца защищена").await;
             return Ok(());
         }
 
@@ -735,6 +768,7 @@ impl Conn {
                             "role": p.role,
                             "isAdmin": p.is_admin,
                             "active": p.active,
+                            "protected": p.protected,
                             "createdAt": p.created_at,
                             "createdBy": p.created_by,
                         })
@@ -745,6 +779,100 @@ impl Conn {
             }
             Err(e) => tracing::error!("не удалось получить список учётных записей: {}", e),
         }
+    }
+
+    /// Матрица прав — администратору. Клиент рисует по ней редактор.
+    async fn send_roles(&mut self) {
+        if !self.allowed("users.manage_roles").await {
+            return;
+        }
+        match db::load_role_caps(&self.pool).await {
+            Ok(map) => {
+                self.send_to_self(
+                    &json!({
+                        "kind": "roles",
+                        "actions": permissions::ACTIONS,
+                        "roles": map,
+                    })
+                    .to_string(),
+                )
+                .await;
+            }
+            Err(e) => tracing::error!("не удалось получить матрицу прав: {}", e),
+        }
+    }
+
+    /// Запись прав роли. После сохранения всем онлайн-сеансам этой роли
+    /// досылаются новые права — интерфейс перестраивается без перезахода.
+    async fn on_roles_set(&mut self, role: String, caps: Vec<String>) -> anyhow::Result<()> {
+        if !self.allowed("users.manage_roles").await {
+            self.deny("users.manage_roles").await?;
+            return Ok(());
+        }
+
+        let role_parsed = match permissions::Role::parse_checked(&role) {
+            Ok(r) => r,
+            Err(e) => {
+                self.reject_login(&e).await;
+                return Ok(());
+            }
+        };
+
+        // У роли admin право управлять ролями снять нельзя: иначе назначенные
+        // администраторы потеряют панель, и вести систему будет некому.
+        // Владелец этим не ограничен — у него полный набор всегда.
+        let mut clean: Vec<String> = caps
+            .into_iter()
+            .filter(|a| permissions::is_known_action(a))
+            .collect();
+        clean.sort();
+        clean.dedup();
+        if role_parsed == permissions::Role::Admin
+            && !clean.iter().any(|a| a == "users.manage_roles")
+        {
+            self.reject_login("У роли администратора нельзя забирать управление ролями")
+                .await;
+            return Ok(());
+        }
+
+        db::set_role_caps(&self.pool, role_parsed.as_str_str(), &clean).await?;
+        permissions::update_role_caps_cache(role_parsed.as_str_str(), clean.clone());
+
+        let actor = self.actor_name().await;
+        db::add_audit(
+            &self.pool,
+            &AuditDraft {
+                actor,
+                action: "roles_set".into(),
+                target: Some(role_parsed.as_str_str().to_string()),
+                detail: Some(clean.join(",")),
+            },
+        )
+        .await?;
+
+        // Досылаем новые права всем, кто сейчас в этой роли.
+        for session in self.hub.sessions_of_role(role_parsed.as_str_str()).await {
+            let is_admin = self.hub.user_is_admin(&session).await;
+            let list = permissions::capabilities(Some(role_parsed), is_admin);
+            self.hub
+                .send_to(
+                    &session,
+                    &json!({
+                        "kind": "capabilities",
+                        "role": role_parsed.as_str_str(),
+                        "isAdmin": is_admin,
+                        "caps": list,
+                    })
+                    .to_string(),
+                )
+                .await;
+        }
+
+        self.send_to_self(&json!({ "kind": "notice", "message": "Права роли обновлены" }).to_string())
+            .await;
+        self.send_roles().await;
+        self.broadcast_audit().await;
+        Ok(())
     }
 
     /// Логин учётной записи, под которой открыт текущий сеанс.
