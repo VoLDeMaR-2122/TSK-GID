@@ -79,7 +79,7 @@ export default function LoginOverlay({ onLogin, version }: Props) {
           <div className="text-center mb-4">
             <div className="text-white font-bold text-sm">Вход в систему</div>
             <div className="text-[#666] text-[10px] mt-1">
-              Логин и пароль выдаёт администратор участка
+              Логин и пароль выдаёт администратор системы
             </div>
           </div>
 
