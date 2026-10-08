@@ -160,6 +160,12 @@ pub async fn handle_socket(socket: WebSocket, pool: Db, hub: Hub) {
     let (own_tx, mut own_rx) = tokio::sync::broadcast::channel(64);
     let mut global_rx = hub.tx.subscribe();
 
+    // Держим линию живой. Пока сокет молчит, молчаливое соединение убивают
+    // NAT и прокси примерно через 5 минут простоя — клиент переподключается,
+    // а без работающего resume его выкидывало на экран входа.
+    let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(30));
+    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
     let mut conn = Conn {
         pool: pool.clone(),
         hub: hub.clone(),
@@ -219,6 +225,15 @@ pub async fn handle_socket(socket: WebSocket, pool: Db, hub: Hub) {
                         tracing::warn!("клиент отстал, пропущено {} сообщений", n);
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+
+            // Дежурный ping: пока в линии идут пакеты, соединение не считается
+            // простаивающим и его не обрывает промежуточное оборудование.
+            // Браузер отвечает pong сам, отдельной обработки не нужно.
+            _ = keepalive.tick() => {
+                if sink.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break;
                 }
             }
 

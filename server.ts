@@ -295,6 +295,16 @@ function proxyWsToRust(client: WebSocket, url: string) {
     }
   });
 
+  // Дежурные ping/pong сквозь прокси. Библиотека ws отвечает на ping сама
+  // и не отдаёт его как сообщение, поэтому пробрасываем вручную: без пакетов
+  // в линии участок молчит, и такой сокет убивают примерно через 5 минут.
+  upstream.on("ping", (data) => {
+    if (clientAlive && client.readyState === WebSocket.OPEN) client.ping(data);
+  });
+  client.on("ping", (data) => {
+    if (upstreamOpen && upstream.readyState === WebSocket.OPEN) upstream.ping(data);
+  });
+
   const closeBoth = () => {
     if (!clientAlive) return;
     clientAlive = false;

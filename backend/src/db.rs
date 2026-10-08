@@ -159,6 +159,10 @@ pub async fn wait_for_db(pool: &Pool, retries: u32, delay_ms: u64) -> Result<()>
 pub async fn apply_schema(pool: &Pool) -> Result<()> {
     let client = pool.get().await?;
 
+    // Сначала сами таблицы: ALTER TABLE над несуществующей таблицей падает,
+    // поэтому на чистой базе порядок «сначала колонки, потом таблицы» не работал.
+    client.batch_execute(SCHEMA_SQL).await?;
+
     // Колонка добавлена позже — CREATE TABLE IF NOT EXISTS её не создаст
     // в уже существующей базе, поэтому добавляем отдельно.
     client
@@ -195,7 +199,6 @@ pub async fn apply_schema(pool: &Pool) -> Result<()> {
         )
         .await?;
 
-    client.batch_execute(SCHEMA_SQL).await?;
     Ok(())
 }
 
@@ -737,12 +740,16 @@ pub async fn upsert_user_login(pool: &Pool, u: &UserMeta) -> Result<()> {
     let client = pool.get().await?;
     client
         .execute(
-            "INSERT INTO users(session, name, role, area, on_duty, duty_time, is_admin) \
-             VALUES($1,$2,$3,$4,$5,$6,$7) \
+            "INSERT INTO users(session, name, role, area, on_duty, duty_time, is_admin, person_login) \
+             VALUES($1,$2,$3,$4,$5,$6,$7,$8) \
              ON CONFLICT(session) DO UPDATE SET \
-               name = EXCLUDED.name, role = EXCLUDED.role, area = EXCLUDED.area",
+               name = EXCLUDED.name, role = EXCLUDED.role, area = EXCLUDED.area, \
+               person_login = EXCLUDED.person_login",
             // is_admin намеренно не входит в DO UPDATE: признак входа под
             // паролем администратора ставится только сервером после сверки.
+            // А person_login без этого писался пустым, из-за чего продление
+            // сеанса (resume) всегда отказывало: любой обрыв связи выкидывал
+            // человека на экран входа.
             &[
                 &u.session,
                 &u.name,
@@ -751,6 +758,7 @@ pub async fn upsert_user_login(pool: &Pool, u: &UserMeta) -> Result<()> {
                 &u.on_duty,
                 &u.duty_time,
                 &u.is_admin,
+                &u.person_login,
             ],
         )
         .await?;
