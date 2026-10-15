@@ -40,11 +40,16 @@ RUN apk add --no-cache nodejs npm libstdc++ && \
 
 WORKDIR /app
 
+# data_host задан здесь, а не только в docker-compose, намеренно: переменная
+# из ENV образа переживает потерю блока environment:, который Dokploy
+# подменяет своими значениями. Без неё оба процесса идут в localhost:5432
+# внутри контейнера, где базы нет, и контейнер падает с 502.
 ENV NODE_ENV=production \
     PORT=3000 \
     BACKEND_PORT=3001 \
     HOSTNAME=0.0.0.0 \
-    BACKEND_HOST=0.0.0.0
+    BACKEND_HOST=0.0.0.0 \
+    data_host=db
 
 # Фронтенд от Next.js
 COPY --from=web /app/public ./public
