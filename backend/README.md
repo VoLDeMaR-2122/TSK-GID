@@ -23,9 +23,9 @@
 администратора:
 
 ```bash
-GID_ADMIN_LOGIN="Заведующий"
-GID_ADMIN_PASSWORD=пароль
-GID_ADMIN_NAME="Заведующий участком"
+admin_login="Заведующий"
+admin_password=пароль
+admin_name="Заведующий участком"
 ```
 
 Значения с пробелами — только в кавычках. Логин обязан совпадать с учёткой
@@ -60,12 +60,17 @@ npm run backend:check        # clippy
 GID_LOGIN=... GID_PASSWORD=... node backend/protocol-check.mjs ws://127.0.0.1:3001/ws
 
 # проверка входа и управления сотрудниками (нужны данные первого админа)
-GID_ADMIN_LOGIN=... GID_ADMIN_PASSWORD=... node backend/auth-check.mjs ws://127.0.0.1:3001/ws
+admin_login=... admin_password=... node backend/auth-check.mjs ws://127.0.0.1:3001/ws
 ```
 
-Переменные окружения читаются из `.env.local` в корне: `DB_HOST`, `DB_PORT`,
-`POSTGRES_*`, `BACKEND_PORT`, `BACKEND_HOST`, `GID_ALLOWED_ORIGINS`,
-`GID_ADMIN_*`.
+Переменные окружения читаются из `.env.local` в корне: `data_host`,
+`data_port`, `data_user`, `data_base`, `data_name`, `BACKEND_PORT`,
+`BACKEND_HOST`, `allowed_origins`, `admin_*`.
+
+`data_base` — пароль от Postgres. Если значение начинается с `postgres://`
+или `postgresql://`, это готовая строка подключения: остальные `data_*`
+игнорируются. Прежние имена (`POSTGRES_*`, `GID_ADMIN_*`,
+`GID_ALLOWED_ORIGINS`) тоже читаются, но новые проверяются первыми.
 
 ## Протокол
 

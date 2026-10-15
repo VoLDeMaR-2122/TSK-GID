@@ -1,17 +1,17 @@
 // Проверка входа по учётной записи и управления сотрудниками.
 //   node backend/auth-check.mjs ws://127.0.0.1:3001/ws
 //
-// Пароль первого администратора берётся из GID_ADMIN_PASSWORD /
-// GID_ADMIN_LOGIN — тех же переменных, что и у сервера.
+// Пароль первого администратора берётся из admin_password /
+// admin_login — тех же переменных, что и у сервера.
 
 import WebSocket from "ws";
 
 const URL = process.argv[2] || "ws://127.0.0.1:3001/ws";
-const ADMIN_LOGIN = process.env.GID_ADMIN_LOGIN || "";
-const ADMIN_PASSWORD = process.env.GID_ADMIN_PASSWORD || "";
+const ADMIN_LOGIN = process.env.admin_login || process.env.GID_ADMIN_LOGIN || "";
+const ADMIN_PASSWORD = process.env.admin_password || process.env.GID_ADMIN_PASSWORD || "";
 
 if (!ADMIN_LOGIN || !ADMIN_PASSWORD) {
-  console.error("Задайте GID_ADMIN_LOGIN и GID_ADMIN_PASSWORD — те же, что у сервера.");
+  console.error("Задайте admin_login и admin_password — те же, что у сервера.");
   process.exit(2);
 }
 

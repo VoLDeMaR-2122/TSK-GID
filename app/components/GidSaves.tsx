@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { getSaveStorage, type SaveMeta } from '@/lib/gid/saveStorage';
+import { mskStamp, mskDateTime } from '@/lib/datetime';
 
 // ---------- УСТОЙЧИВЫЕ ACCESSOR'Ы (твой стиль: читаем и рус, и англ ключи) ----------
 // Нужны ТОЛЬКО для валидации соответствия ниток и для импорта чужого файла.
@@ -19,8 +20,7 @@ type AnyState = { stations: any[]; trains: any[]; marks?: any[]; [k: string]: an
 type Props = { state: AnyState; setState: (arg: any) => void };
 
 const DIR_OF = { stations: 'station', trains: 'trains' } as const;
-const fileStamp = (prefix: string) =>
-  `${prefix}_${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
+const fileStamp = (prefix: string) => `${prefix}_${mskStamp()}.json`;
 
 export function GidSaves({ state, setState }: Props) {
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +133,7 @@ export function GidSaves({ state, setState }: Props) {
   }, [refreshSaves]);
 
   // ---------- РЕНДЕР ----------
-  const fmt = (iso: string) => { try { return new Date(iso).toLocaleString('ru-RU'); } catch { return iso; } };
+  const fmt = (iso: string) => { try { return mskDateTime(iso); } catch { return iso; } };
   const btn: React.CSSProperties = { fontSize: 13 };
   const linkBtn: React.CSSProperties = { background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, font: 'inherit', textDecoration: 'underline' };
 

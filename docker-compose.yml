@@ -3,13 +3,13 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-gid}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
-      POSTGRES_DB: ${POSTGRES_DB:-gid}
+      POSTGRES_USER: ${data_user:-gid}
+      POSTGRES_PASSWORD: ${data_base:?задайте data_base в Environment}
+      POSTGRES_DB: ${data_name:-gid}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gid} -d ${POSTGRES_DB:-gid}"]
+      test: ["CMD-SHELL", "pg_isready -U ${data_user:-gid} -d ${data_name:-gid}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -39,20 +39,22 @@ services:
       BACKEND_PORT: 3001   # <- Rust-бэкенд: логика, БД, WebSocket
       BACKEND_HOST: 0.0.0.0
 
-      DB_HOST: db
-      POSTGRES_USER: ${POSTGRES_USER:-gid}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
-      POSTGRES_DB: ${POSTGRES_DB:-gid}
+      # База данных. data_base — это пароль, либо (если значение
+      # начинается с postgres://) готовая строка подключения к внешней базе.
+      data_host: db
+      data_base: ${data_base:?задайте data_base в Environment}
+      data_user: ${data_user:-gid}
+      data_name: ${data_name:-gid}
 
       # Первый администратор. Создаётся при первом запуске, если в базе
       # ещё нет ни одного администратора. Пароль сохраняется только как
       # argon2id-хеш — открытым текстом в базу не попадает.
-      GID_ADMIN_LOGIN: ${GID_ADMIN_LOGIN:?задайте логин первого администратора}
-      GID_ADMIN_PASSWORD: ${GID_ADMIN_PASSWORD:?задайте пароль первого администратора}
-      GID_ADMIN_NAME: ${GID_ADMIN_NAME:-Администратор участка}
+      admin_login: ${admin_login:?задайте admin_login в Environment}
+      admin_password: ${admin_password:?задайте admin_password в Environment}
+      admin_name: ${admin_name:-Администратор участка}
 
       # Разрешённые источники WebSocket, через запятую
-      GID_ALLOWED_ORIGINS: ${GID_ALLOWED_ORIGINS:-}
+      allowed_origins: ${allowed_origins:-}
     ports:
       # Хост-публикация портов — только для прямого доступа без reverse-proxy.
       # В Dokploy оставь HOST_FRONT_PORT/HOST_BACK_PORT пустыми: Traefik ходит

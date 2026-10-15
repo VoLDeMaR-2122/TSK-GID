@@ -8,25 +8,44 @@ import { WebSocketServer, WebSocket } from "ws";
 import { Pool } from "pg";
 
 // ================= КОНФИГУРАЦИЯ =================
+/** Читает переменную окружения по списку имён: новое, потом прежнее. */
+function envAny(...names: string[]): string {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value && value.trim()) return value;
+  }
+  return "";
+}
+
 const DEV = process.env.NODE_ENV !== "production";
 const PORT = Number(process.env.PORT || 3000);
 const HOSTNAME = "0.0.0.0";
 
-const PG_USER = process.env.POSTGRES_USER || "gid";
+// data_base умеет быть и паролем, и готовой строкой подключения:
+// начало с postgres:// или postgresql:// означает URL. Одна переменная
+// покрывает и встроенный Postgres из docker-compose, и внешнюю базу.
+const DATA_BASE = envAny("data_base", "POSTGRES_PASSWORD");
+const DATA_URL_LIKE =
+  DATA_BASE.startsWith("postgres://") || DATA_BASE.startsWith("postgresql://");
+
+const PG_USER = envAny("data_user", "POSTGRES_USER") || "gid";
 // Пароль берётся только из окружения. Значение по умолчанию было бы
 // утечкой: реквизиты доступа лежали бы прямо в репозитории.
-const PG_PASS = process.env.POSTGRES_PASSWORD;
-const PG_DB = process.env.POSTGRES_DB || "gid";
-const PG_HOST = process.env.DB_HOST || "localhost";
-const PG_PORT = process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432;
+const PG_PASS = DATA_BASE;
+const PG_DB = envAny("data_name", "POSTGRES_DB") || "gid";
+const PG_HOST = envAny("data_host", "DB_HOST") || "localhost";
+const PG_PORT = Number(envAny("data_port", "DB_PORT")) || 5432;
 
 const DATABASE_URL = process.env.DATABASE_URL ||
-  `postgresql://${PG_USER}:${PG_PASS}@${PG_HOST}:${PG_PORT}/${PG_DB}`;
+  (DATA_URL_LIKE ? DATA_BASE
+    : `postgresql://${PG_USER}:${PG_PASS}@${PG_HOST}:${PG_PORT}/${PG_DB}`);
 
 console.log(`[CONFIG] App will listen on ${HOSTNAME}:${PORT}`);
-console.log(`[CONFIG] DB Target: ${PG_HOST}:${PG_PORT} (User: ${PG_USER}, DB: ${PG_DB})`);
+console.log(DATA_URL_LIKE
+  ? `[CONFIG] DB Target: из строки подключения в data_base`
+  : `[CONFIG] DB Target: ${PG_HOST}:${PG_PORT} (User: ${PG_USER}, DB: ${PG_DB})`);
 
-const ALLOWED_ORIGINS = (process.env.GID_ALLOWED_ORIGINS || "")
+const ALLOWED_ORIGINS = envAny("allowed_origins", "GID_ALLOWED_ORIGINS")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);

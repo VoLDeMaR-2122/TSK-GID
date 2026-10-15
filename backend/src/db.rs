@@ -113,20 +113,38 @@ CREATE TABLE IF NOT EXISTS audit_log (
 pub fn build_pool(database_url: &str) -> Result<Pool> {
     let mut cfg = PoolConfig::new();
 
-    // DATABASE_URL, если задан, заменяет собранные ниже части.
-    if !database_url.is_empty() {
-        cfg.url = Some(database_url.to_string());
+    // data_base умеет быть и паролем, и готовой строкой подключения:
+    // начало с postgres:// или postgresql:// означает URL. Так одна
+    // переменная покрывает и встроенный Postgres из docker-compose,
+    // и внешнюю базу из Dokploy.
+    let data_base = crate::env_any(&["data_base", "POSTGRES_PASSWORD"]);
+    let explicit_url = if !database_url.is_empty() {
+        Some(database_url.to_string())
+    } else {
+        match data_base.as_deref() {
+            Some(v) if v.starts_with("postgres://") || v.starts_with("postgresql://") => {
+                tracing::info!("data_base содержит строку подключения — отдельные части не читаются");
+                Some(v.to_string())
+            }
+            _ => None,
+        }
+    };
+
+    // Либо URL, либо собранные части. Одновременно не задаём: иначе
+    // значения из переменных перебьют то, что разобрано из URL.
+    if let Some(url) = explicit_url {
+        cfg.url = Some(url);
+    } else {
+        cfg.host = Some(crate::env_any(&["data_host", "DB_HOST"]).unwrap_or_else(|| "localhost".into()));
+        cfg.port = Some(
+            crate::env_any(&["data_port", "DB_PORT"])
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(5432),
+        );
+        cfg.user = Some(crate::env_any(&["data_user", "POSTGRES_USER"]).unwrap_or_else(|| "gid".into()));
+        cfg.password = data_base;
+        cfg.dbname = Some(crate::env_any(&["data_name", "POSTGRES_DB"]).unwrap_or_else(|| "gid".into()));
     }
-    cfg.host = Some(std::env::var("DB_HOST").unwrap_or_else(|_| "localhost".into()));
-    cfg.port = Some(
-        std::env::var("DB_PORT")
-            .ok()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(5432),
-    );
-    cfg.user = Some(std::env::var("POSTGRES_USER").unwrap_or_else(|_| "gid".into()));
-    cfg.password = std::env::var("POSTGRES_PASSWORD").ok();
-    cfg.dbname = Some(std::env::var("POSTGRES_DB").unwrap_or_else(|_| "gid".into()));
 
     cfg.create_pool(Some(Runtime::Tokio1), NoTls)
         .context("не удалось создать пул соединений с Postgres")
@@ -206,7 +224,7 @@ pub async fn apply_schema(pool: &Pool) -> Result<()> {
 
 /// Первый администратор создаётся из переменных окружения при развёртывании.
 /// Вызывается на старте: если активных администраторов ещё нет — заводит учётную
-/// запись из GID_ADMIN_LOGIN / GID_ADMIN_PASSWORD. Пароль открытым текстом
+/// запись из admin_login / admin_password. Пароль открытым текстом
 /// в базу не попадает: сохраняется только argon2id-хеш.
 pub async fn bootstrap_first_admin(pool: &Pool) -> Result<bool> {
     // Владелец из переменных помечается защищённым всегда — даже если
@@ -218,24 +236,25 @@ pub async fn bootstrap_first_admin(pool: &Pool) -> Result<bool> {
         return Ok(false);
     }
 
-    let login = match std::env::var("GID_ADMIN_LOGIN") {
-        Ok(v) if !v.trim().is_empty() => v,
-        _ => {
+    let login = match crate::env_any(&["admin_login", "GID_ADMIN_LOGIN"]) {
+        Some(v) => v,
+        None => {
             tracing::warn!(
-                "администраторов нет и GID_ADMIN_LOGIN не задан — вход в систему будет невозможен"
+                "администраторов нет и admin_login не задан — вход в систему будет невозможен"
             );
             return Ok(false);
         }
     };
-    let password = std::env::var("GID_ADMIN_PASSWORD").unwrap_or_default();
+    let password = crate::env_any(&["admin_password", "GID_ADMIN_PASSWORD"]).unwrap_or_default();
 
     if password.is_empty() {
-        tracing::warn!("GID_ADMIN_PASSWORD не задан — администратор не создан");
+        tracing::warn!("admin_password не задан — администратор не создан");
         return Ok(false);
     }
 
     let normalized = crate::accounts::normalize_login(&login);
-    let display_name = std::env::var("GID_ADMIN_NAME").unwrap_or_else(|_| login.clone());
+    let display_name =
+        crate::env_any(&["admin_name", "GID_ADMIN_NAME"]).unwrap_or_else(|| login.clone());
 
     // Учётка могла остаться от прошлого развёртывания — обновляем пароль и права.
     if find_person(pool, &normalized).await?.is_some() {
@@ -310,9 +329,9 @@ pub async fn set_person_protected(pool: &Pool, login: &str, protected: bool) -> 
 /// Помечает владельца из переменных окружения защищённым.
 /// Пароль, имя и прочее не трогает — только флаг.
 async fn ensure_owner_protected(pool: &Pool) -> Result<()> {
-    let login = match std::env::var("GID_ADMIN_LOGIN") {
-        Ok(v) if !v.trim().is_empty() => crate::accounts::normalize_login(&v),
-        _ => return Ok(()),
+    let login = match crate::env_any(&["admin_login", "GID_ADMIN_LOGIN"]) {
+        Some(v) => crate::accounts::normalize_login(&v),
+        None => return Ok(()),
     };
     if login.is_empty() {
         return Ok(());
@@ -334,7 +353,7 @@ async fn ensure_owner_protected(pool: &Pool) -> Result<()> {
         Some(_) => {}
         None => {
             tracing::warn!(
-                "GID_ADMIN_LOGIN={} — такой учётки нет, владелец НЕ защищён. \
+                "admin_login={} — такой учётки нет, владелец НЕ защищён. \
                  Заведите учётку с этим логином через панель и перезапустите сервер",
                 login
             );

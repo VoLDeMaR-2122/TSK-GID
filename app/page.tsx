@@ -7,6 +7,7 @@ import { ws } from "@/lib/ws";
 import { Train, Mark } from "@/lib/types";
 import { renderAlertBody, stripAlertMarkup } from "@/lib/alertFormat";
 import { Role, ROLE_SHORT, Action, can as canWith } from "@/lib/permissions";
+import { mskTime, mskTimeSec, mskDate, mskDayTime } from "@/lib/datetime";
 import TrainGraph from "@/app/components/TrainGraph";
 import RightPanel from "@/app/components/RightPanel";
 import TrainModal from "@/app/components/TrainModal";
@@ -124,11 +125,10 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
 
   const markNow = (trainId: string, stopIndex: number, field: "arr" | "dep") => {
     if (!can("trains.mark")) return;
-    const now = new Date();
-    setStopField(trainId, stopIndex, field, String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"));
+    setStopField(trainId, stopIndex, field, mskTime());
   };
 
-  // --- Логика Пометок ---
+  // Пометоки
   const openNewMark = useCallback(() => { if (can("marks.manage")) setMarkModal({ open: true, edit: null }); }, [can]);
   const openEditMark = (id: string) => { if (can("marks.manage")) setMarkModal({ open: true, edit: state.marks.find((m) => m.id === id) || null }); };
 
@@ -297,7 +297,7 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
                   title="Открыть полное описание">
                   <div className="flex items-start gap-2">
                     <span className="mt-0.5">{a.type === "critical" ? <i className="fas fa-circle-exclamation" /> : a.type === "warning" ? <i className="fas fa-triangle-exclamation" /> : <i className="fas fa-circle-info" />}</span>
-                    <div className="flex-1"><div className="text-[#ddd] font-bold">{stripAlertMarkup(a.title || a.text) || "Без названия"}</div><div className="text-[#666] text-[9px] mt-0.5">{a.author} · {new Date(a.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</div></div>
+                    <div className="flex-1"><div className="text-[#ddd] font-bold">{stripAlertMarkup(a.title || a.text) || "Без названия"}</div><div className="text-[#666] text-[9px] mt-0.5">{a.author} · {mskTime(a.createdAt)}</div></div>
                   </div>
                 </div>
               ))
@@ -407,7 +407,7 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
                   {audit.map((a) => (
                     <tr key={a.id}>
                       <td className="text-[#888] whitespace-nowrap">
-                        {new Date(a.ts).toLocaleTimeString("ru-RU")}
+                        {mskTimeSec(a.ts)}
                       </td>
                       <td className="text-[#ccc]">{a.actor}</td>
                       <td>
@@ -429,7 +429,7 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
 
       {/* Индикаторы */}
       <div className="h-[32px] bg-[#0a0a0a] border-b border-[#1a1a1a] flex items-center px-3 gap-3 shrink-0">
-        <span className="text-[#888] text-[11px] font-medium">{clock.toLocaleDateString("ru-RU")}</span>
+        <span className="text-[#888] text-[11px] font-medium">{mskDate(clock)} <span className="text-[#555] text-[9px]">МСК</span></span>
         <span className="gid-sep">|</span>
         <span className="text-[#555] text-[10px] uppercase tracking-wider">Сетка: <b className="text-[#aaa]">{state.view.hoursVisible}ч</b></span>
         <span className={`gid-toggle ${state.showNumbers ? "on" : ""}`} onClick={() => toggle("showNumbers")}><span className="led" />Номера</span>
@@ -460,7 +460,7 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
             {ROLE_SHORT[role!]} · {me.name}
           </span>
           <span className="gid-server"><span className="led" />СИНХР.</span>
-          <span className="gid-clock">{clock.toLocaleTimeString("ru-RU")}</span>
+          <span className="gid-clock">{mskTimeSec(clock)}</span>
         </div>
       </div>
 
@@ -505,7 +505,7 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
             <span className="gid-rp-title">{detailAlert.title || "Без названия"}</span>
           </div>
           <div className="text-[10px] text-[#666] mb-2">
-            {detailAlert.author} · {new Date(detailAlert.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            {detailAlert.author} · {mskDayTime(detailAlert.createdAt)}
           </div>
           {detailAlert.text && (
             <div className="text-[11px] text-[#ccc] border-l-2 border-[#444] pl-2 mb-2">{stripAlertMarkup(detailAlert.text)}</div>

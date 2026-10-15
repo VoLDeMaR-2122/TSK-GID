@@ -1,4 +1,6 @@
+import { mskStamp } from "@/lib/datetime";
+
 export function makeSaveName(prefix: string) {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  return `${prefix}_${ts}.json`; // напр. trains_2026-09-28T12-00-00.json
+  // напр. trains_2026-10-11T14-23-07.json — по московскому времени
+  return `${prefix}_${mskStamp()}.json`;
 }

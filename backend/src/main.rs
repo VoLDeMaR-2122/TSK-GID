@@ -16,6 +16,21 @@ use axum::Router;
 
 use crate::hub::Hub;
 
+/// Читает переменную окружения по списку имён: сначала новое короткое,
+/// потом прежнее. Пустые и состоящие из пробелов значения считаются
+/// не заданными. Нужно, чтобы сервер на новом развёртывании и локальный
+/// запуск со старым .env.local работали одновременно.
+pub fn env_any(names: &[&str]) -> Option<String> {
+    for name in names {
+        if let Ok(value) = std::env::var(name) {
+            if !value.trim().is_empty() {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Переменные из .env.local — как у Node-сервера.
@@ -39,7 +54,7 @@ async fn main() -> Result<()> {
         .unwrap_or(3001);
     let hostname = std::env::var("BACKEND_HOST").unwrap_or_else(|_| "127.0.0.1".into());
 
-    let allowed_origins: Vec<String> = std::env::var("GID_ALLOWED_ORIGINS")
+    let allowed_origins: Vec<String> = env_any(&["allowed_origins", "GID_ALLOWED_ORIGINS"])
         .unwrap_or_default()
         .split(',')
         .map(|s| s.trim().to_string())
@@ -74,13 +89,13 @@ async fn main() -> Result<()> {
         let _ = dotenvy::dotenv();
     }
     tracing::info!(
-        "конфиг: env-файл={}, cwd={:?}, GID_ADMIN_LOGIN={}",
+        "конфиг: env-файл={}, cwd={:?}, admin_login={}",
         env_path
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "(не найден)".into()),
         std::env::current_dir(),
-        std::env::var("GID_ADMIN_LOGIN").unwrap_or_else(|_| "(не задан)".into()),
+        env_any(&["admin_login", "GID_ADMIN_LOGIN"]).unwrap_or_else(|| "(не задан)".into()),
     );
     let pool = db::build_pool(&std::env::var("DATABASE_URL").unwrap_or_default())?;
     db::wait_for_db(&pool, 20, 2000).await?;
@@ -96,7 +111,7 @@ async fn main() -> Result<()> {
     let role_caps = db::load_role_caps(&pool).await?;
     permissions::init_role_caps(role_caps);
 
-    // Первый администратор — из переменных окружения (GID_ADMIN_LOGIN/PASSWORD).
+    // Первый администратор — из переменных окружения (admin_login/admin_password).
     db::bootstrap_first_admin(&pool).await?;
 
     // Чистим сеансы старой системы: роль в них ставил клиент,

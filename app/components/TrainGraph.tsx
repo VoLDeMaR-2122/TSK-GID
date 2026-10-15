@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { GidState, CAT_COLORS, CAT_NAMES } from "@/lib/types";
+import { mskTime, mskMinutes } from "@/lib/datetime";
 
 interface Props {
   state: GidState;
@@ -348,14 +349,13 @@ export default function TrainGraph({ state, onZoomSet, onSelect, onNewTrainAt, o
       }
 
       // ---- Текущее время ----
-      const now = new Date();
-      const nx = ((now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60) / 60) * W;
+      const nx = (mskMinutes() / 60) * W;
       c.strokeStyle = "#f00"; c.lineWidth = 1; c.setLineDash([5, 4]);
       c.beginPath(); c.moveTo(nx + .5, 0); c.lineTo(nx + .5, totalH); c.stroke(); c.setLineDash([]);
       c.fillStyle = "#f00"; c.beginPath();
       c.moveTo(nx - 5, 0); c.lineTo(nx + 5, 0); c.lineTo(nx, 8); c.closePath(); c.fill();
       c.font = "bold 9px Consolas, monospace"; c.fillStyle = "#f55";
-      c.fillText(String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0"), nx + 7, 9);
+      c.fillText(mskTime(), nx + 7, 9);
     };
 
     draw();

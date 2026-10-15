@@ -29,20 +29,26 @@ Dokploy → Applications → Create → провайдер гита → репо
 с понятной ошибкой):
 
 ```bash
-POSTGRES_USER=gid
-POSTGRES_PASSWORD=длинный_пароль_базы
-POSTGRES_DB=gid
+admin_login=Заведующий
+admin_password=длинный_пароль_админа
+admin_name="Заведующий участком"
 
-GID_ADMIN_LOGIN=Заведующий
-GID_ADMIN_PASSWORD=длинный_пароль_админа
-GID_ADMIN_NAME=Заведующий участком
+data_base=длинный_пароль_базы
 ```
 
-Необязательные:
+Необязательные (значения по умолчанию — `gid`):
 
 ```bash
-GID_ALLOWED_ORIGINS=https://gid.example.ru   # свой домен после шага 4
+data_user=gid       # пользователь Postgres
+data_name=gid       # имя базы
+allowed_origins=https://gid.example.ru   # свой домен после шага 4
 ```
+
+`data_base` — это пароль от Postgres. Если туда положить строку
+подключения вместо пароля, например
+`postgresql://gid:пароль@db:5432/gid`, сервер возьмёт всё из неё, а
+`data_user` / `data_name` проигнорирует. Нужно для внешней базы, например
+управляемого Postgres из Dokploy.
 
 `NEXT_PUBLIC_WS_URL` не задавать — останется пустым, и браузер пойдёт
 на тот же хост по `/ws`, а Node внутри контейнера проксирует дальше на Rust.
@@ -58,8 +64,8 @@ GID_ALLOWED_ORIGINS=https://gid.example.ru   # свой домен после ш
 
 Postgres уже описан в `docker-compose.yml` (сервис `db`, данные в томе
 `pgdata`) — отдельно заводить базу в Dokploy не нужно. Если позже захочешь
-переехать на управляемый Postgres из Dokploy — поменяй только `DB_HOST`,
-`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`.
+переехать на управляемый Postgres из Dokploy — поменяй `data_base` на строку
+подключения и убери сервис `db`.
 
 ### Шаг 6. Деплой и проверка
 
@@ -109,17 +115,17 @@ Traefik ходит во внутренние порты контейнера н�
 Переменные три, все в `.env` рядом с `docker-compose.yml`:
 
 ```bash
-GID_ADMIN_LOGIN="Заведующий"
-GID_ADMIN_PASSWORD=длинный_пароль
-GID_ADMIN_NAME="Заведующий участком"
+admin_login="Заведующий"
+admin_password=длинный_пароль
+admin_name="Заведующий участком"
 ```
 
-- `GID_ADMIN_LOGIN` — логин, он же ФИО. Регистр и пробелы не важны:
+- `admin_login` — логин, он же ФИО. Регистр и пробелы не важны:
   `Заведующий`, `заведующий ` и `ЗАВЕДУЮЩИЙ` — одна и та же учётка.
   **Логин обязан совпадать с учёткой в базе**, иначе сервер честно
   напишет в журнал, что владелец не защищён, — и никого не защитит.
-- `GID_ADMIN_PASSWORD` — в базу не пишется, сохраняется только argon2id-хеш.
-- `GID_ADMIN_NAME` — необязательно, как показывать в списке сотрудников.
+- `admin_password` — в базу не пишется, сохраняется только argon2id-хеш.
+- `admin_name` — необязательно, как показывать в списке сотрудников.
 - Значения с пробелами — **только в двойных кавычках**. Без кавычек
   локальный бэкенд не прочитает файл дальше этой строки.
 
@@ -150,7 +156,7 @@ GID_ADMIN_NAME="Заведующий участком"
 Два способа.
 
 Через переменные — если других администраторов нет: задайте новое значение
-`GID_ADMIN_PASSWORD` и перезапустите. Учётка обновится.
+`admin_password` и перезапустите. Учётка обновится.
 
 Через интерфейс — владелец или любой админ меняет пароль себе
 через панель (текущий пароль требуется). Учётные записи других сотрудников
@@ -254,17 +260,17 @@ cd /opt/gid
 
 ```bash
 # База данных. Пароль сюда попадает обязательно.
-POSTGRES_USER=gid
-POSTGRES_PASSWORD=длинный_пароль_базы
-POSTGRES_DB=gid
+data_base=длинный_пароль_базы
+data_user=gid
+data_name=gid
 # Первый администратор
-GID_ADMIN_LOGIN=Заведующий
-GID_ADMIN_PASSWORD=длинный_пароль_админа
-GID_ADMIN_NAME="Заведующий участком"
+admin_login=Заведующий
+admin_password=длинный_пароль_админа
+admin_name="Заведующий участком"
 
 # Источники, которым разрешён WebSocket. После настройки nginx
-# укажите свой домен: GID_ALLOWED_ORIGINS=https://gid.example.ru
-GID_ALLOWED_ORIGINS=
+# укажите свой домен: allowed_origins=https://gid.example.ru
+allowed_origins=
 
 # Хост-порты для ручного деплоя (в Dokploy не нужны).
 # Host-nginx из deploy/nginx.conf ждёт сайт на 127.0.0.1:3000,
@@ -367,4 +373,4 @@ NEXT_PUBLIC_WS_URL=wss://api.gid.example.ru/ws
 ```
 
 и тогда бэкенд надо публиковать (`3001:3001`) и разрешить его origin в
-`GID_ALLOWED_ORIGINS`. Один адрес через nginx проще и безопаснее.
+`allowed_origins`. Один адрес через nginx проще и безопаснее.

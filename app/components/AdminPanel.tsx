@@ -5,6 +5,7 @@ import { OnlineUser, PersonAccount, RolesData } from "@/lib/useOnlineUsers";
 import { Alert } from "@/lib/useAlerts";
 import { renderAlertBody } from "@/lib/alertFormat";
 import { Role, ROLE_NAMES, ROLE_SHORT, Action, Capabilities, canManageRole } from "@/lib/permissions";
+import { mskTime } from "@/lib/datetime";
 import DraggableModal from "./DraggableModal";
 
 interface Props {
@@ -313,7 +314,7 @@ export default function AdminPanel(p: Props) {
                         <td className="text-right whitespace-nowrap">
                           {editable && (
                             <button className="gid-btn gid-btn-sm"
-                              onClick={() => p.updateUser(u.session, { onDuty: !u.onDuty, dutyTime: !u.onDuty ? new Date().toTimeString().slice(0, 5) : "" })}>
+                              onClick={() => p.updateUser(u.session, { onDuty: !u.onDuty, dutyTime: !u.onDuty ? mskTime() : "" })}>
                               {u.onDuty ? "Снять" : "Назначить"}
                             </button>
                           )}
@@ -699,7 +700,7 @@ export default function AdminPanel(p: Props) {
                           {a.text && <div className="text-[#888] text-[10px]">{a.text}</div>}
                         </td>
                         <td className="text-[#888]">{a.author}</td>
-                        <td className="text-[#666] font-mono text-[10px]">{new Date(a.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</td>
+                        <td className="text-[#666] font-mono text-[10px]">{mskTime(a.createdAt)}</td>
                         <td><span className={`gid-chip ${a.active ? "gid-chip-dsp" : "gid-chip-op"}`}>{a.active ? "активно" : "скрыто"}</span></td>
                         <td className="text-right whitespace-nowrap">
                           <button className="gid-btn gid-btn-sm gid-btn-info mr-1" title="Редактировать" onClick={() => startAlEdit(a)}><i className="fas fa-pen" /></button>
