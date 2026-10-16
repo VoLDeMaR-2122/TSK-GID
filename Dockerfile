@@ -48,8 +48,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     BACKEND_PORT=3001 \
     HOSTNAME=0.0.0.0 \
-    BACKEND_HOST=0.0.0.0 \
-    data_host=db
+    BACKEND_HOST=0.0.0.0
 
 # Фронтенд от Next.js
 COPY --from=web /app/public ./public

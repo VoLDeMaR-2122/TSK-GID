@@ -1,20 +1,4 @@
 services:
-  db:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${data_user:-gid}
-      POSTGRES_PASSWORD: ${data_base:?задайте data_base в Environment}
-      POSTGRES_DB: ${data_name:-gid}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${data_user:-gid} -d ${data_name:-gid}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  # ВАЖНО: имя сервиса должно быть точно 'app'
   app:
     build:
       context: .
@@ -28,9 +12,6 @@ services:
         # значение попадает в бандл и выполняется в браузере ПОСЕТИТЕЛЯ.
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-}
     restart: unless-stopped
-    depends_on:
-      db:
-        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 3000          # <- Фронтенд Next.js слушает этот порт
@@ -41,7 +22,7 @@ services:
 
       # База данных. data_base — это пароль, либо (если значение
       # начинается с postgres://) готовая строка подключения к внешней базе.
-      data_host: db
+      # Для Dokploy Managed Postgres укажите полную строку подключения.
       data_base: ${data_base:?задайте data_base в Environment}
       data_user: ${data_user:-gid}
       data_name: ${data_name:-gid}
@@ -63,6 +44,3 @@ services:
       # и HOST_BACK_PORT=3001 — под них настроен deploy/nginx.conf.
       - "${HOST_FRONT_PORT:+${HOST_FRONT_PORT}:}3000"
       - "${HOST_BACK_PORT:+127.0.0.1:${HOST_BACK_PORT}:}3001"
-
-volumes:
-  pgdata:
