@@ -12,7 +12,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 # ВАЖНО: NEXT_PUBLIC_* подставляется в бандл на этапе сборки, поэтому
 # адрес WebSocket-бэкенда передаётся именно сюда, а не в environment.
-ARG NEXT_PUBLIC_WS_URL=ws://127.0.0.1:3001/ws
+ARG NEXT_PUBLIC_WS_URL=
 ENV NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}
 
 RUN npm run build
