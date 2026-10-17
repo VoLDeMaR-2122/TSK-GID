@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #000;
+  --bg: #050505;
   --panel: #0a0a0a;
   --panel-2: #0f0f0f;
-  --elev: #161616;
-  --border: #252525;
-  --border-soft: #1a1a1a;
-  --text: #b0b0b0;
+  --elev: #111;
+  --border: #1f1f1f;
+  --border-soft: #151515;
+  --text: #c8c8c8;
   --text-bright: #fff;
   --text-dim: #555;
   --green: #00cc44;
@@ -37,22 +37,22 @@ html, body {
 
 /* ===== Скроллбары ===== */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: #080808; }
-::-webkit-scrollbar-thumb { background: #1f1f1f; border: 2px solid #080808; border-radius: 0; }
-::-webkit-scrollbar-thumb:hover { background: #2a2a2a; }
-::-webkit-scrollbar-corner { background: #080808; }
+::-webkit-scrollbar-track { background: #050505; }
+::-webkit-scrollbar-thumb { background: #1a1a1a; border: 2px solid #050505; border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: #252525; }
+::-webkit-scrollbar-corner { background: #050505; }
 
 /* ===== Кнопки ===== */
 .gid-btn {
-  background: linear-gradient(#2a2a2a, #1a1a1a);
-  border: 1px solid #444; color: #ddd;
+  background: linear-gradient(#252525, #151515);
+  border: 1px solid #3a3a3a; color: #ddd;
   padding: 5px 14px; border-radius: 0; cursor: pointer;
   font: inherit; font-size: 11px; font-weight: 500; transition: all .1s; user-select: none;
   display: inline-flex; align-items: center; gap: 6px; justify-content: center;
-  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  box-shadow: 0 1px 3px rgba(0,0,0,.6);
   line-height: 1.5; letter-spacing: .2px;
 }
-.gid-btn:hover { background: linear-gradient(#3a3a3a, #2a2a2a); border-color: #666; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+.gid-btn:hover { background: linear-gradient(#353535, #252525); border-color: #555; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.7); }
 .gid-btn:active { transform: translateY(1px); box-shadow: none; }
 .gid-btn-primary { background: linear-gradient(#0a5a2a, #063a1a); border-color: #0c8a34; color: #7fff9f; }
 .gid-btn-primary:hover { background: linear-gradient(#0c6a32, #084a22); border-color: #0ea040; color: #aaffbf; box-shadow: 0 2px 8px rgba(0,255,80,.2); }
@@ -139,27 +139,27 @@ html, body {
 /* ===== Таблицы ===== */
 .gid-table { width: 100%; border-collapse: collapse; font-size: 11px; line-height: 1.6; }
 .gid-table th {
-  background: #1a1a1a; color: #aaa; font-weight: 600; text-align: left;
-  padding: 8px 14px; border-bottom: 2px solid #444;
+  background: #151515; color: #aaa; font-weight: 600; text-align: left;
+  padding: 8px 14px; border-bottom: 2px solid #333;
   font-size: 9px; text-transform: uppercase; letter-spacing: .6px;
   position: sticky; top: 0; z-index: 1;
 }
-.gid-table td { padding: 7px 14px; border-bottom: 1px solid #333; color: #ccc; line-height: 1.6; }
+.gid-table td { padding: 7px 14px; border-bottom: 1px solid #222; color: #ccc; line-height: 1.6; }
 .gid-table tbody tr { transition: background .08s; }
-.gid-table tbody tr:nth-child(even) { background: #101010; }
-.gid-table tbody tr:hover { background: #1c1c1c; }
+.gid-table tbody tr:nth-child(even) { background: #0c0c0c; }
+.gid-table tbody tr:hover { background: #151515; }
 
 /* ===== Меню / шапка ===== */
 .gid-menu-item {
-  padding: 3px 10px; border-radius: 0; color: #999; cursor: pointer;
+  padding: 3px 10px; border-radius: 0; color: #888; cursor: pointer;
   transition: all .08s; font-size: 11px; font-weight: 500; user-select: none; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 5px;
   line-height: 1.5; letter-spacing: .2px;
 }
-.gid-menu-item:hover { background: #1a1a1a; color: #fff; }
-.gid-menu-item:active { background: #252525; }
-.gid-menu-item .key { color: #555; font-size: 9px; font-weight: 400; }
-.gid-menu-item:hover .key { color: #777; }
+.gid-menu-item:hover { background: #151515; color: #fff; }
+.gid-menu-item:active { background: #1e1e1e; }
+.gid-menu-item .key { color: #444; font-size: 9px; font-weight: 400; }
+.gid-menu-item:hover .key { color: #666; }
 
 .gid-toggle {
   display: inline-flex; align-items: center; gap: 5px;
@@ -167,7 +167,7 @@ html, body {
   color: #555; cursor: pointer; font-size: 9px; text-transform: uppercase;
   letter-spacing: .5px; transition: all .08s; user-select: none; font-weight: 600; line-height: 1.4;
 }
-.gid-toggle .led { width: 6px; height: 6px; border-radius: 50%; background: #2a2a2a; transition: all .08s; }
+.gid-toggle .led { width: 6px; height: 6px; border-radius: 50%; background: #252525; transition: all .08s; }
 .gid-toggle.on { color: var(--accent); border-color: #0a3a1a; background: #06120a; }
 .gid-toggle.on .led { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
 .gid-toggle:hover { border-color: #2a2a2a; }
@@ -178,24 +178,24 @@ html, body {
   display: inline-flex; align-items: center; gap: 7px; font-weight: 600; line-height: 1.5; letter-spacing: .3px;
 }
 .gid-badge .led { width: 6px; height: 6px; border-radius: 50%; background: #333; transition: all .1s; }
-.gid-badge-dnc { background: #1a0e00; border-color: #5a3000; color: #cc8833; }
+.gid-badge-dnc { background: #1a0e00; border-color: #3a2000; color: #aa8844; }
 .gid-badge-dnc.active { background: #2a1700; border-color: var(--orange); color: #ffaa44; box-shadow: 0 0 12px rgba(255,136,0,.3); }
 .gid-badge-dnc.active .led { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
-.gid-badge-dsp { background: #001a0e; border-color: #0a5a30; color: #44aa66; }
+.gid-badge-dsp { background: #001a0e; border-color: #0a3a20; color: #338855; }
 .gid-badge-dsp.active { background: #002a12; border-color: var(--green); color: #55dd88; box-shadow: 0 0 12px rgba(0,224,80,.3); }
 .gid-badge-dsp.active .led { background: var(--green); box-shadow: 0 0 6px var(--green); }
 
 /* ===== Правая панель ===== */
 .gid-rp-head {
-  padding: 8px 10px; border-bottom: 1px solid #252525; color: #888;
+  padding: 8px 10px; border-bottom: 1px solid #1f1f1f; color: #777;
   font-size: 9px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
-  background: #0c0c0c; flex-shrink: 0;
+  background: #0a0a0a; flex-shrink: 0;
 }
-.gid-rp-section { border-bottom: 1px solid #1a1a1a; padding-bottom: 8px; margin-bottom: 8px; }
+.gid-rp-section { border-bottom: 1px solid #151515; padding-bottom: 8px; margin-bottom: 8px; }
 .gid-rp-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 11px; line-height: 1.6; letter-spacing: .2px; }
-.gid-rp-row .k { color: #666; flex-shrink: 0; }
-.gid-rp-row .v { color: #ccc; text-align: right; word-break: break-word; }
-.gid-rp-title { color: #fff; font-weight: 600; font-size: 14px; letter-spacing: .3px; }
+.gid-rp-row .k { color: #555; flex-shrink: 0; }
+.gid-rp-row .v { color: #bbb; text-align: right; word-break: break-word; }
+.gid-rp-title { color: #ddd; font-weight: 600; font-size: 13px; letter-spacing: .3px; }
 
 /* ===== Timeline расписания ===== */
 .gid-sched { position: relative; padding-left: 15px; margin-top: 2px; }
@@ -203,23 +203,23 @@ html, body {
 .gid-sched-item { position: relative; padding: 4px 0; font-size: 10px; line-height: 1.6; }
 .gid-sched-item::before {
   content: ''; position: absolute; left: -14px; top: 7px;
-  width: 6px; height: 6px; border-radius: 0; background: #2a2a2a; border: 1px solid #444;
+  width: 6px; height: 6px; border-radius: 0; background: #252525; border: 1px solid #333;
 }
 .gid-sched-item.arr::before { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 5px rgba(0,255,65,.5); }
 .gid-sched-item.dep::before { background: var(--blue); border-color: var(--blue); box-shadow: 0 0 5px rgba(0,170,255,.5); }
-.gid-sched-item .st { color: #ccc; font-weight: 500; letter-spacing: .2px; }
-.gid-sched-item .tm { color: #777; font-size: 9px; letter-spacing: .3px; }
+.gid-sched-item .st { color: #bbb; font-weight: 500; letter-spacing: .2px; }
+.gid-sched-item .tm { color: #666; font-size: 9px; letter-spacing: .3px; }
 
 /* ===== Онлайн чипы ===== */
 .gid-chip { padding: 3px 10px; border-radius: 0; font-size: 9px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; border: 1px solid; line-height: 1.5; letter-spacing: .4px; white-space: nowrap; }
-.gid-chip-dnc { background: #2a1500; border-color: #5a3000; color: #ffaa44; }
-.gid-chip-dsp { background: #002a15; border-color: #0a5a30; color: #44dd88; }
-.gid-chip-op { background: #1a1a1a; border-color: #333; color: #999; }
+.gid-chip-dnc { background: #2a1500; border-color: #3a2000; color: #cc8833; }
+.gid-chip-dsp { background: #002a15; border-color: #0a3a20; color: #33aa66; }
+.gid-chip-op { background: #151515; border-color: #2a2a2a; color: #777; }
 .gid-chip.me { border-color: #ffffff50; box-shadow: 0 0 8px rgba(255,255,255,.1); }
 .gid-chip .duty-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 4px var(--accent); }
 
 /* ===== Прочее ===== */
-.gid-sep { color: #1a1a1a; margin: 0 4px; user-select: none; }
+.gid-sep { color: #151515; margin: 0 4px; user-select: none; }
 .gid-clock { color: var(--red); font-weight: 600; font-size: 13px; letter-spacing: 1px; text-shadow: 0 0 8px rgba(255,30,30,.3); font-variant-numeric: tabular-nums; }
 .gid-server { font-size: 9px; color: var(--accent); display: inline-flex; align-items: center; gap: 4px; letter-spacing: .5px; font-weight: 500; }
 .gid-server .led { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 5px var(--accent); animation: pulse-led 2s infinite; }
@@ -228,7 +228,7 @@ html, body {
 .gid-blink { animation: blink 1.1s step-end infinite; }
 
 .gid-tooltip {
-  position: fixed; background: #0a0a0af0; border: 1px solid #2a2a2a;
+  position: fixed; background: #0a0a0af0; border: 1px solid #252525;
   border-left: 2px solid var(--accent);
   padding: 6px 10px; font-size: 10px; color: #bbb; z-index: 90;
   pointer-events: none; white-space: pre-wrap; line-height: 1.5;
@@ -286,5 +286,5 @@ html, body {
 /* Иконки в правой панели */
 .gid-rp-head .fa, .gid-rp-head .fas {
   font-size: 11px;
-  color: #666;
+  color: #555;
 }
