@@ -18,10 +18,6 @@ export interface Alert {
 
 const uid = () => "a" + Math.random().toString(36).slice(2, 10);
 
-export function emptyAlert(): Omit<Alert, "id" | "author" | "createdAt" | "active"> {
-  return { type: "info", title: "", text: "", full: "" };
-}
-
 export function useAlerts() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
 
@@ -62,7 +58,6 @@ export function useAlerts() {
     ws.send({ kind: "alertUpdate", alert });
   const toggleAlert = (id: string) => ws.send({ kind: "alertToggle", id });
   const removeAlert = (id: string) => ws.send({ kind: "alertRemove", id });
-  const clearOld = () => { /* сервер хранит историю; очистка по желанию */ };
 
-  return { alerts, addAlert, updateAlert, toggleAlert, removeAlert, clearOld };
+  return { alerts, addAlert, updateAlert, toggleAlert, removeAlert };
 }

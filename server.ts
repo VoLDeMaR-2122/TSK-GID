@@ -53,15 +53,6 @@ const ALLOWED_ORIGINS = envAny("allowed_origins", "GID_ALLOWED_ORIGINS")
 const pool = new Pool({ connectionString: DATABASE_URL });
 
 // ================= ТИПЫ ДАННЫХ =================
-type UserMeta = {
-  session: string;
-  name: string;
-  role: string;
-  area: string;
-  onDuty: boolean;
-  dutyTime: string;
-};
-
 type Station = { id: string; name: string; km: number; paths: number; code: string };
 type Stop = { stationId: string; arr: string | null; dep: string | null; path: number };
 type Train = {
@@ -73,9 +64,6 @@ type Mark = {
   id: string; type: string; peregon: number; start: string; end: string;
   color: string; text?: string; service?: string;
 };
-
-// Интерфейсы для строк из Postgres (snake_case)
-interface DbUserRow { session: string; name: string; role: string; area: string; on_duty: boolean; duty_time: string }
 
 // ================= СХЕМА БД =================
 const SCHEMA_SQL = `
@@ -169,18 +157,6 @@ async function waitForDb(retries = 20, delayMs = 2000): Promise<void> {
       await new Promise(r => setTimeout(r, delayMs));
     }
   }
-}
-
-async function loadUsersMeta(): Promise<Map<string, UserMeta>> {
-  const res = await pool.query<DbUserRow>("SELECT * FROM users");
-  const map = new Map<string, UserMeta>();
-  for (const r of res.rows) {
-    map.set(r.session, {
-      session: r.session, name: r.name, role: r.role, area: r.area,
-      onDuty: r.on_duty, dutyTime: r.duty_time
-    });
-  }
-  return map;
 }
 
 async function saveState(payload: { stations: Station[]; trains: Train[]; marks: Mark[] }) {
@@ -285,7 +261,6 @@ async function seedIfEmpty() {
 
 // ================= WEBSOCKET: ПРОКСИ НА RUST-БЭКЕНД =================
 const wss = new WebSocketServer({ noServer: true });
-const userCache = new Map<string, UserMeta>();
 
 // ---------- Прокси WebSocket → Rust-бэкенд ----------
 // Вся логика и БД — на Rust. Node только отдаёт страницы Next.js
@@ -360,11 +335,6 @@ app.prepare().then(async () => {
     await waitForDb();
     await pool.query(SCHEMA_SQL);
     await seedIfEmpty();
-
-    const allUsers = await loadUsersMeta();
-    for (const [sess, u] of allUsers) {
-      userCache.set(sess, u);
-    }
 
     const server = http.createServer((req, res) => {
       handle(req, res);

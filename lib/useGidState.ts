@@ -7,6 +7,12 @@ import { ws } from "./ws";
 
 const LOCAL_KEY = "gid_local_view";
 
+function isRemoteState(value: unknown): value is Pick<GidState, "stations" | "trains" | "marks"> {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return Array.isArray(candidate.stations) && Array.isArray(candidate.trains) && Array.isArray(candidate.marks);
+}
+
 function loadLocal(): Pick<GidState, "view" | "selected" | "showNumbers" | "showTimeMarks"> {
   const def = {
     view: INITIAL_STATE.view,
@@ -35,15 +41,17 @@ export function useGidState() {
   useEffect(() => {
     ws.init();
 
-    const off = ws.on("state", (m: any) => {
+    const off = ws.on("state", (m) => {
+      const remoteState = m.state;
+      if (!isRemoteState(remoteState)) return;
       ready.current = true;
       applyingRemote.current = true;
 
       setState((prev) => ({
         ...prev,
-        stations: m.state.stations,
-        trains: m.state.trains,
-        marks: m.state.marks,
+        stations: remoteState.stations,
+        trains: remoteState.trains,
+        marks: remoteState.marks,
       }));
     });
 

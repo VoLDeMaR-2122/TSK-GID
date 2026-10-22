@@ -1,36 +1,49 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ГИД Урал-ВНИИЖТ
 
-## Getting Started
+График исполненного движения поездов участка. Фронтенд — Next.js (React),
+логика, PostgreSQL и WebSocket — Rust-бэкенд (`backend/`).
 
-First, run the development server:
+## Требования
+
+- Node.js 20.9+
+- PostgreSQL (параметры подключения — в `.env.local`)
+- Rust / Cargo — для бэкенда
+
+## Запуск в разработке
+
+Нужны и фронтенд, и бэкенд. Одной командой:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev:rust
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Откройте http://localhost:3000 и войдите логином и паролем администратора
+(по умолчанию — из `.env.local`: `admin_login` / `admin_password`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Или по отдельности, в двух терминалах:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev          # Next.js + прокси /ws → Rust, порт 3000
+npm run backend:dev  # Rust-бэкенд, порт 3001
+```
 
-## Learn More
+## Переменные окружения
 
-To learn more about Next.js, take a look at the following resources:
+Пример — `.env.example`. Локальный файл `.env.local` не коммитится.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Тесты
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run backend:test       # протокол: нужны GID_LOGIN/GID_PASSWORD (учётка ДНЦ)
+npm run backend:test:auth  # вход и права: нужны admin_login/admin_password
+```
 
-## Deploy on Vercel
+## Сборка и запуск в продакшне
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run build   # next build + сборка server.ts в dist/server.cjs
+npm start       # node dist/server.cjs
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Развёртывание через Dokploy — в `DEPLOY.md`.

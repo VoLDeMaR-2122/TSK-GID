@@ -242,39 +242,66 @@ export default function AdminPanel(p: Props) {
 
       {/* СТАНЦИИ */}
       {activeTab === "stations" && can("stations.manage") && (
-        <div>
-          <div className="border border-[#2a2a2a] overflow-hidden mb-3">
-            <div className="max-h-[260px] overflow-y-auto">
-              <table className="gid-table">
-                <thead><tr><th>№</th><th>Название</th><th>Км</th><th>Пути</th><th>Код</th><th></th></tr></thead>
-                <tbody>
-                  {p.stations.map((s, i) => (
-                    <tr key={s.id}>
-                      <td className="text-[#555]">{i + 1}</td>
-                      <td className="font-bold text-[#ddd]">{s.name}</td>
-                      <td>{s.km}</td><td className="text-center">{s.paths}</td><td className="text-[#666]">{s.code}</td>
-                      <td className="whitespace-nowrap text-right">
-                        <button className="gid-btn gid-btn-sm mr-1" onClick={() => moveSt(i, -1)}>↑</button>
-                        <button className="gid-btn gid-btn-sm mr-1" onClick={() => moveSt(i, 1)}>↓</button>
-                        <button className="gid-btn gid-btn-sm gid-btn-info mr-1" onClick={() => { setStEdit(i); setStForm({ name: s.name, km: String(s.km), paths: String(s.paths), code: s.code }); }}><i className="fas fa-pen" /></button>
-                        <button className="gid-btn gid-btn-sm gid-btn-danger" onClick={() => p.setStations(p.stations.filter((_, x) => x !== i))}><i className="fas fa-xmark" /></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-[#666] font-bold uppercase tracking-wider">Станции маршрута</span>
+            <span className="text-[9px] text-[#555] ml-auto border border-[#333] px-1.5 py-0 rounded">{p.stations.length}</span>
           </div>
-          <button className="gid-btn gid-btn-primary" onClick={() => { setStEdit(-1); setStForm({ name: "", km: "", paths: "3", code: "" }); }}>＋ Добавить станцию</button>
+          <div className="border border-[#2a2a2a] overflow-hidden max-h-[300px] overflow-y-auto">
+            <table className="gid-table">
+              <thead>
+                <tr>
+                  <th className="w-5 text-center">№</th>
+                  <th>Название</th>
+                  <th className="w-16 text-center">Км</th>
+                  <th className="w-16 text-center">Пути</th>
+                  <th className="w-20 text-center">Код ЕСР</th>
+                  <th className="w-28 text-right">Действия</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.stations.map((s, i) => (
+                  <tr key={s.id} className="hover:bg-[#131313]">
+                    <td className="text-[#555] font-mono text-[10px]">{i + 1}</td>
+                    <td className="font-bold text-[#ddd]">{s.name}</td>
+                    <td className="text-center text-[#999] font-mono">{s.km}</td>
+                    <td className="text-center text-[#999]">{s.paths}</td>
+                    <td className="text-center text-[#666] font-mono text-[10px]">{s.code || "—"}</td>
+                    <td className="whitespace-nowrap text-right">
+                      <button className="gid-btn gid-btn-sm mr-1" title="Переместить выше" onClick={() => moveSt(i, -1)}>↑</button>
+                      <button className="gid-btn gid-btn-sm mr-1" title="Переместить ниже" onClick={() => moveSt(i, 1)}>↓</button>
+                      <button className="gid-btn gid-btn-sm gid-btn-info mr-1" title="Редактировать" onClick={() => { setStEdit(i); setStForm({ name: s.name, km: String(s.km), paths: String(s.paths), code: s.code }); }}><i className="fas fa-pen" /></button>
+                      <button className="gid-btn gid-btn-sm gid-btn-danger" title="Удалить" onClick={() => { if (confirm(`Удалить станцию "${s.name}"?`)) p.setStations(p.stations.filter((_, x) => x !== i)); }}><i className="fas fa-trash-can" /></button>
+                    </td>
+                  </tr>
+                ))}
+                {p.stations.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="text-center text-[#555] py-8">Станций нет — добавьте первую</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="gid-btn gid-btn-primary" onClick={() => { setStEdit(-1); setStForm({ name: "", km: "", paths: "3", code: "" }); }}>＋ Добавить станцию</button>
+            <button className="gid-btn gid-btn-sm" title="Обновить список" onClick={() => {}}><i className="fas fa-rotate" /></button>
+          </div>
           {stEdit !== -2 && (
-            <div className="mt-3 border border-[#0a4a24] bg-[#06120a] p-3">
-              <div className="gid-grid2">
-                <div className="gid-field"><label className="gid-label">Название</label><input className="gid-input" value={stForm.name} onChange={(e) => setStForm({ ...stForm, name: e.target.value })} autoFocus /></div>
-                <div className="gid-field"><label className="gid-label">Километр</label><input className="gid-input" value={stForm.km} onChange={(e) => setStForm({ ...stForm, km: e.target.value })} /></div>
-                <div className="gid-field"><label className="gid-label">Кол-во путей</label><input className="gid-input" value={stForm.paths} onChange={(e) => setStForm({ ...stForm, paths: e.target.value })} /></div>
-                <div className="gid-field"><label className="gid-label">Код ЕСР</label><input className="gid-input" value={stForm.code} onChange={(e) => setStForm({ ...stForm, code: e.target.value })} /></div>
+            <div className="border border-[#0a4a24] bg-[#06120a] p-3 rounded">
+              <div className="text-[10px] text-[#8a8] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <i className={stEdit >= 0 ? "fas fa-pen" : "fas fa-plus-circle"} /> {stEdit >= 0 ? "Редактирование станции" : "Новая станция"}
               </div>
-              <div className="flex gap-2 mt-1"><button className="gid-btn gid-btn-primary" onClick={saveStation}><i className="fas fa-floppy-disk" /> Сохранить</button><button className="gid-btn" onClick={() => setStEdit(-2)}>Отмена</button></div>
+              <div className="gid-grid3">
+                <div className="gid-field"><label className="gid-label">Название станции</label><input className="gid-input" value={stForm.name} onChange={(e) => setStForm({ ...stForm, name: e.target.value })} autoFocus placeholder="Например: Москва-Уральская" /></div>
+                <div className="gid-field"><label className="gid-label">Километр</label><input className="gid-input" type="number" value={stForm.km} onChange={(e) => setStForm({ ...stForm, km: e.target.value })} placeholder="0" /></div>
+                <div className="gid-field"><label className="gid-label">Кол-во путей</label><input className="gid-input" type="number" value={stForm.paths} onChange={(e) => setStForm({ ...stForm, paths: e.target.value })} placeholder="3" /></div>
+                <div className="gid-field"><label className="gid-label">Код ЕСР</label><input className="gid-input" value={stForm.code} onChange={(e) => setStForm({ ...stForm, code: e.target.value })} placeholder="Код ЕСР" /></div>
+              </div>
+              <div className="flex gap-2 items-center mt-3">
+                <button className="gid-btn gid-btn-primary" onClick={saveStation}><i className="fas fa-floppy-disk" /> Сохранить</button>
+                <button className="gid-btn" onClick={() => setStEdit(-2)}>Отмена</button>
+              </div>
             </div>
           )}
         </div>
@@ -620,97 +647,157 @@ export default function AdminPanel(p: Props) {
         </div>
       )}
 
-      {/* ОПОВЕЩЕНИЯ — полноценный редактор */}
+      {/* ОПОВЕЩЕНИЯ — редактор сrich-text форматированием */}
       {activeTab === "alerts" && can("alerts.manage") && (
-        <div>
-          <div className="border border-[#0a4a24] bg-[#06120a] p-3 mb-3">
-            <div className="text-[10px] text-[#8a8] font-bold uppercase tracking-wider mb-2">
-              <i className={alEdit ? "fas fa-pen" : "fas fa-bell"} /> {alEdit ? "Редактирование оповещения" : "Новое оповещение"}
+        <div className="space-y-3">
+          {/* Редактор */}
+          <div className="border border-[#2a2a2a] overflow-hidden flex flex-col h-full">
+            <div className="border-b border-[#2a2a2a] bg-[#0d0d0d] p-2.5 flex items-center gap-2">
+              <span className="text-[10px] text-[#666] font-bold uppercase tracking-wider">
+                <i className={alEdit ? "fas fa-pen" : "fas fa-bell"} /> {alEdit ? "Редактирование оповещения" : "Новое оповещение"}
+              </span>
+              <span className="text-[9px] text-[#555] ml-auto border border-[#333] px-1.5 py-0 rounded">{p.alerts.length} всего</span>
             </div>
-            <div className="gid-grid2">
+            <div className="p-3 flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="gid-field">
+                  <label className="gid-label">Тип оповещения</label>
+                  <select className="gid-select" value={alType} onChange={(e) => setAlType(e.target.value as Alert["type"])}>
+                    <option value="info">Инфо</option>
+                    <option value="warning">Внимание</option>
+                    <option value="critical">Критично</option>
+                  </select>
+                  <div className="text-[9px] text-[#555] mt-1">
+                    {alType === "critical" ? "Красная полоска, звуковой сигнал" : alType === "warning" ? "Жёлтая полоска" : "Синяя полоска"}
+                  </div>
+                </div>
+                <div className="gid-field">
+                  <label className="gid-label">Название</label>
+                  <input className="gid-input" value={alTitle}
+                    onChange={(e) => { p.clearOpFeedback(); setAlTitle(e.target.value); }}
+                    placeholder="Окно на перегоне…" />
+                </div>
+              </div>
               <div className="gid-field">
-                <label className="gid-label">Тип</label>
-                <select className="gid-select" value={alType} onChange={(e) => setAlType(e.target.value as Alert["type"])}>
-                  <option value="info">Инфо</option>
-                  <option value="warning">Внимание</option>
-                  <option value="critical">Критично</option>
-                </select>
+                <label className="gid-label">Краткое описание (для ленты и баннера)</label>
+                <input className="gid-input" value={alShort}
+                  onChange={(e) => { p.clearOpFeedback(); setAlShort(e.target.value); }}
+                  placeholder="Одна строка — покажется в баннере и списке…" />
               </div>
               <div className="gid-field">
-                <label className="gid-label">Название</label>
-                <input className="gid-input" value={alTitle}
-                  onChange={(e) => { p.clearOpFeedback(); setAlTitle(e.target.value); }}
-                  placeholder="Окно на перегоне…" />
+                <label className="gid-label">Полное описание</label>
+                <div className="flex flex-wrap gap-1 mb-1">
+                  <button type="button" className="gid-btn gid-btn-sm" title="Жирный **текст**"
+                    onClick={() => applyWrap("**", "**", "текст")}><i className="fas fa-bold" /></button>
+                  <button type="button" className="gid-btn gid-btn-sm" title="Курсив *текст*"
+                    onClick={() => applyWrap("*", "*", "текст")}><i className="fas fa-italic" /></button>
+                  <button type="button" className="gid-btn gid-btn-sm" title="Код `код`"
+                    onClick={() => applyWrap("`", "`", "команда")}><i className="fas fa-code" /></button>
+                  <button type="button" className="gid-btn gid-btn-sm" title="Маркированный список"
+                    onClick={applyList}><i className="fas fa-list-ul" /></button>
+                  <button type="button" className="gid-btn gid-btn-sm" title="Ссылка [текст](url)"
+                    onClick={() => applyWrap("[", "](https://)", "текст")}><i className="fas fa-link" /></button>
+                  <button type="button" className="gid-btn gid-btn-sm" title="Очистить выделение"
+                    onClick={() => { p.clearOpFeedback(); setAlFull(""); fullRef.current?.focus(); }}><i className="fas fa-eraser" /></button>
+                </div>
+                <textarea ref={fullRef} className="gid-textarea font-mono text-[11px]" value={alFull}
+                  onChange={(e) => { p.clearOpFeedback(); setAlFull(e.target.value); }}
+                  placeholder="Подробности: время, место, причину и что делать…"
+                  rows={5} />
+                <div className="text-[9px] text-[#555] mt-1 flex items-center gap-1.5">
+                  <span className="opacity-60">Разметка:</span>
+                  <span className="font-bold">**жирный**</span>
+                  <span className="text-[#555]">·</span>
+                  <span className="font-bold italic">*курсив*</span>
+                  <span className="text-[#555]">·</span>
+                  <span className="font-mono">`код`</span>
+                  <span className="text-[#555]">·</span>
+                  <span className="font-bold">- список</span>
+                  <span className="text-[#555]">·</span>
+                  <span>[текст](ссылка)</span>
+                </div>
               </div>
-            </div>
-            <div className="gid-field">
-              <label className="gid-label">Краткое описание</label>
-              <input className="gid-input" value={alShort}
-                onChange={(e) => { p.clearOpFeedback(); setAlShort(e.target.value); }}
-                placeholder="Одна строка для полоски и списка…" />
-            </div>
-            <div className="gid-field">
-              <label className="gid-label">Полное описание</label>
-              <div className="flex gap-1 mb-1">
-                <button type="button" className="gid-btn gid-btn-sm" title="Жирный"
-                  onClick={() => applyWrap("**", "**", "текст")}><i className="fas fa-bold" /></button>
-                <button type="button" className="gid-btn gid-btn-sm" title="Курсив"
-                  onClick={() => applyWrap("*", "*", "текст")}><i className="fas fa-italic" /></button>
-                <button type="button" className="gid-btn gid-btn-sm" title="Код"
-                  onClick={() => applyWrap("`", "`", "команда")}><i className="fas fa-code" /></button>
-                <button type="button" className="gid-btn gid-btn-sm" title="Маркированный список"
-                  onClick={applyList}><i className="fas fa-list-ul" /></button>
-                <button type="button" className="gid-btn gid-btn-sm" title="Ссылка"
-                  onClick={() => applyWrap("[", "](https://)", "текст")}><i className="fas fa-link" /></button>
+              {alFull.trim() && (
+                <div className="border border-[#2a2a2a] bg-[#0a0a0a] p-3 rounded">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <span className="text-[9px] text-[#555] font-bold uppercase tracking-wider">Предпросмотр</span>
+                    <span className="text-[9px] text-[#555] ml-auto">живой пред просмотр разметки</span>
+                  </div>
+                  <div className="p-3 bg-[#0a0a0a] border border-[#1a1a1a] rounded text-[11px] leading-relaxed text-[#ccc]">
+                    {renderAlertBody(alFull)}
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2 items-center mt-1 pt-2 border-t border-[#1a1a1a]">
+                <button className="gid-btn gid-btn-primary"
+                  disabled={!alTitle.trim() && !alShort.trim()}
+                  onClick={saveAlert}>
+                  <i className="fas fa-floppy-disk" /> {alEdit ? "Сохранить изменения" : "Опубликовать оповещение"}
+                </button>
+                {alEdit && <button className="gid-btn" onClick={resetAlForm}>Отмена</button>}
               </div>
-              <textarea ref={fullRef} className="gid-textarea" value={alFull}
-                onChange={(e) => { p.clearOpFeedback(); setAlFull(e.target.value); }}
-                placeholder="Подробности: время, место, что делать…"
-                rows={3} />
-              <div className="text-[9px] text-[#555] mt-1">
-                Разметка: **жирный**, *курсив*, `код`, - список, [текст](https://…)
-              </div>
-            </div>
-            {alFull.trim() && (
-              <div className="border border-[#2a2a2a] bg-[#0a0a0a] p-2 mb-2">
-                <div className="text-[9px] text-[#555] uppercase tracking-wider mb-1">Предпросмотр</div>
-                <div className="text-[11px] text-[#aaa] leading-relaxed">{renderAlertBody(alFull)}</div>
-              </div>
-            )}
-            <div className="flex gap-2 items-center mt-1">
-              <button className="gid-btn gid-btn-primary"
-                disabled={!alTitle.trim() && !alShort.trim()}
-                onClick={saveAlert}>
-                <i className="fas fa-floppy-disk" /> {alEdit ? "Сохранить" : "Опубликовать"}
-              </button>
-              {alEdit && <button className="gid-btn" onClick={resetAlForm}>Отмена</button>}
             </div>
           </div>
+
+          {/* Список оповещений */}
           <div className="border border-[#2a2a2a] overflow-hidden">
-            <div className="max-h-[300px] overflow-y-auto">
-              {p.alerts.length === 0 ? <div className="text-center text-[#555] py-6">Оповещений нет</div> : (
-                <table className="gid-table">
-                  <thead><tr><th>Тип</th><th>Название / кратко</th><th>Автор</th><th>Время</th><th>Статус</th><th></th></tr></thead>
-                  <tbody>
-                    {p.alerts.map((a) => (
-                      <tr key={a.id} className={alEdit === a.id ? "bg-[#0a140a]" : ""}>
-                        <td>{a.type === "critical" ? <i className="fas fa-circle-exclamation" /> : a.type === "warning" ? <i className="fas fa-triangle-exclamation" /> : <i className="fas fa-circle-info" />}</td>
-                        <td>
-                          <div className="text-[#ddd] font-bold">{a.title || <span className="text-[#555] font-normal">Без названия</span>}</div>
-                          {a.text && <div className="text-[#888] text-[10px]">{a.text}</div>}
-                        </td>
-                        <td className="text-[#888]">{a.author}</td>
-                        <td className="text-[#666] font-mono text-[10px]">{mskTime(a.createdAt)}</td>
-                        <td><span className={`gid-chip ${a.active ? "gid-chip-dsp" : "gid-chip-op"}`}>{a.active ? "активно" : "скрыто"}</span></td>
-                        <td className="text-right whitespace-nowrap">
-                          <button className="gid-btn gid-btn-sm gid-btn-info mr-1" title="Редактировать" onClick={() => startAlEdit(a)}><i className="fas fa-pen" /></button>
-                          <button className="gid-btn gid-btn-sm mr-1" onClick={() => p.toggleAlert(a.id)}>{a.active ? "Скрыть" : "Вкл"}</button>
-                          <button className="gid-btn gid-btn-sm gid-btn-danger" onClick={() => p.removeAlert(a.id)}><i className="fas fa-xmark" /></button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="border-b border-[#2a2a2a] bg-[#0d0d0d] p-2 flex items-center justify-between">
+              <span className="text-[10px] text-[#666] font-bold uppercase tracking-wider">Активные оповещения</span>
+              {p.alerts.length > 0 && (
+                <span className={`text-[9px] px-1.5 py-0 rounded border font-bold ${p.alerts.some((a) => a.type === "critical") ? "border-[#dd2222] text-[#ff8a8a]" : "border-[#333] text-[#888]"}`}>
+                  {p.alerts.length}
+                </span>
+              )}
+            </div>
+            <div className="max-h-[340px] overflow-y-auto">
+              {p.alerts.length === 0 ? (
+                <div className="text-center text-[#555] py-10">
+                  <i className="fas fa-bell text-[#222] block mb-2 opacity-20" />
+                  <div className="text-[11px]">Оповещений нет</div>
+                </div>
+              ) : (
+                <div className="divide-y divide-[#1a1a1a]">
+                  {p.alerts.map((a) => {
+                    const isCrit = a.type === "critical";
+                    const isWarn = a.type === "warning";
+                    return (
+                      <div key={a.id}
+                        className={`px-3 py-3 cursor-pointer hover:bg-[#131313] transition-colors flex items-start gap-2.5 ${isCrit ? "border-l-3 border-[#dd2222] bg-[#140000]" : isWarn ? "border-l-3 border-[#ccaa00] bg-[#161200]" : "border-l-3 border-[#0099dd] bg-[#08141c]"}`}
+                        onClick={() => { startAlEdit(a); }}
+                        title="Редактировать оповещение">
+                        <div className="mt-0.5 flex shrink-0">
+                          {isCrit ? <i className="fas fa-circle-exclamation text-[#ff8a8a]" /> :
+                            isWarn ? <i className="fas fa-triangle-exclamation text-[#fcde8a]" /> :
+                            <i className="fas fa-circle-info text-[#6fb3ff]" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-1.5">
+                            <div className="text-[#ddd] font-bold truncate">{a.title || "Без названия"}</div>
+                            <span className={`text-[9px] px-1 py-0 rounded border ${alEdit === a.id ? "border-[#0a7a2a] text-[#6f6]" : "border-[#333] text-[#555]"}`}>
+                              {a.type}
+                            </span>
+                          </div>
+                          {a.text && (
+                            <div className="text-[#666] text-[9px] mt-0.5 truncate opacity-85">{a.text}</div>
+                          )}
+                          <div className="text-[#555] text-[9px] mt-1.5 flex items-center gap-1.5">
+                            <span className="text-[#777]">{a.author}</span>
+                            <span className="text-[#444]">·</span>
+                            <span className="text-[#666] font-mono">{mskTime(a.createdAt)}</span>
+                            <span className={`ml-auto text-[9px] px-1.5 py-0 border rounded font-bold ${a.active ? "border-[#0a7a2a] text-[#6f6]" : "border-[#333] text-[#555]"}`}>
+                              {a.active ? "активно" : "скрыто"}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="ml-2 flex items-center gap-1">
+                          <button className="gid-btn gid-btn-sm gid-btn-info" onClick={(e) => { e.stopPropagation(); startAlEdit(a); }} title="Редактировать"><i className="fas fa-pen" /></button>
+                          <button className="gid-btn gid-btn-sm" onClick={(e) => { e.stopPropagation(); p.toggleAlert(a.id); }} title={a.active ? "Скрыть" : "Показать"}>{a.active ? "скрыть" : "показать"}</button>
+                          <button className="gid-btn gid-btn-sm gid-btn-danger" onClick={(e) => { e.stopPropagation(); if (confirm(`Удалить оповещение "${a.title || a.text}"?`)) p.removeAlert(a.id); }} title="Удалить"><i className="fas fa-trash-can" /></button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
           </div>

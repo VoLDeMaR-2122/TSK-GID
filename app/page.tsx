@@ -60,6 +60,9 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
 
   const role: Role | undefined = me?.role;
   const activeAlerts = alerts.filter((a) => a.active);
+  // Экспорт/импорт/сброс меняют график у всех — только админу и ДНЦ.
+  const isAdminOrDnc = role === "admin" || role === "dnc";
+  const hasCriticalAlert = activeAlerts.some((a) => a.type === "critical");
 
   // Полоска оповещений: ротация по всем активным, не только критичным.
   // Клик открывает карточку с полным описанием.
@@ -156,6 +159,7 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
     a.href = URL.createObjectURL(blob);
     a.download = "gid_ural_export.json";
     a.click();
+    URL.revokeObjectURL(a.href);
   }, [state.stations, state.trains, state.marks]);
 
 
@@ -245,16 +249,18 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
         {mi(<><i className="fas fa-shield-halved" /> Панель</>, "F6", () => setAdminOpen(true), can("admin.panel"))}
         {mi(<><i className="fas fa-chart-column" /> Статистика</>, "F7", () => setStatsOpen(true), can("stats.view"))}
         <span className="gid-sep">|</span>
-        {mi(<><i className="fas fa-arrow-down" /> Экспорт</>, "", exportJSON)}
+        {mi(<><i className="fas fa-arrow-down" /> Экспорт</>, "", exportJSON, isAdminOrDnc)}
         {/* Импорт через нативную метку: ref не нужен, файл выбирается кликом по label */}
-        <label className="gid-menu-item"><i className="fas fa-arrow-up" /> Импорт
-          <input type="file" accept=".json" className="hidden" onChange={importJSON} />
-        </label>
-        {mi(<><i className="fas fa-rotate-left" /> Сброс</>, "", resetData)}
+        {isAdminOrDnc && (
+          <label className="gid-menu-item"><i className="fas fa-arrow-up" /> Импорт
+            <input type="file" accept=".json" className="hidden" onChange={importJSON} />
+          </label>
+        )}
+        {mi(<><i className="fas fa-rotate-left" /> Сброс</>, "", resetData, isAdminOrDnc)}
         <span className="flex-1" />
         <span className="gid-menu-item" onClick={() => setSearchOpen(true)}><i className="fas fa-magnifying-glass" /> Поиск</span>
         <span className="gid-menu-item relative" onClick={() => setAlertsOpen((v) => !v)}>
-          <i className="fas fa-bell" />{activeAlerts.length > 0 && <span className="absolute -top-1 -right-1 bg-[#f00] text-white text-[8px] rounded-full w-3.5 h-3.5 grid place-items-center font-bold">{activeAlerts.length}</span>}
+          <i className="fas fa-bell" />{activeAlerts.length > 0 && <span className={`absolute -top-1 -right-1 text-[8px] rounded-full w-3.5 h-3.5 grid place-items-center font-bold ${hasCriticalAlert ? "bg-[#f00] text-white" : "bg-[#0a7a2a] text-[#fff]"}`}>{activeAlerts.length}</span>}
         </span>
         <span className="gid-menu-item relative" onClick={() => setOnlineOpen((v) => !v)}>
           <i className="fas fa-users" /> Онлайн · {users.length}
@@ -286,23 +292,70 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
 
       {/* Выпадающий список оповещений */}
       {alertsOpen && (
-        <div className="fixed top-[36px] right-2 w-[320px] z-40 gid-modal shadow-2xl">
-          <div className="gid-modal-header"><span className="gid-modal-title"><span className="dot" />Оповещения</span>
-            <button className="gid-modal-icon-btn close" onClick={() => setAlertsOpen(false)}><i className="fas fa-xmark" /></button></div>
-          <div className="gid-modal-body !p-0 max-h-[300px] overflow-y-auto">
-            {activeAlerts.length === 0 ? <div className="text-center text-[#555] py-6 text-[11px]">Активных оповещений нет</div> : (
-              activeAlerts.map((a) => (
-                <div key={a.id} className={`px-3 py-2.5 border-b border-[#1a1a1a] text-[11px] cursor-pointer hover:bg-[#151515] ${a.type === "critical" ? "bg-[#1a0000]" : a.type === "warning" ? "bg-[#1a1400]" : ""}`}
+        <div className="fixed top-[36px] right-2 w-[360px] z-40 gid-modal shadow-2xl">
+          <div className="gid-modal-header">
+            <span className="gid-modal-title">
+              <i className="fas fa-bell" /> Оповещения
+              {activeAlerts.length > 0 && (
+                <span className={`ml-auto text-[9px] px-1.5 py-0.5 rounded border font-bold ${hasCriticalAlert ? "border-[#dd2222] text-[#ff8a8a]" : "border-[#333] text-[#888]"}`}>
+                  {activeAlerts.length}
+                </span>
+              )}
+            </span>
+            <button className="gid-modal-icon-btn close" onClick={() => setAlertsOpen(false)}><i className="fas fa-xmark" /></button>
+          </div>
+          <div className="gid-modal-body !p-0 max-h-[360px] overflow-y-auto">
+            {activeAlerts.length === 0 ? (
+              <div className="text-center text-[#555] py-10 text-[11px]">
+                <i className="fas fa-bell text-[#222] block mb-2 opacity-20" /> Активных оповещений нет
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {activeAlerts.map((a) => {
+                  const isCrit = a.type === "critical";
+                  const isWarn = a.type === "warning";
+                  const rowCls = isCrit
+                    ? "border-l-3 border-[#dd2222] bg-[#140000] text-[#f8a8a8]"
+                    : isWarn
+                      ? "border-l-3 border-[#ccaa00] bg-[#161200] text-[#fcde8a]"
+                      : "border-l-3 border-[#0099dd] bg-[#08141c] text-[#aee6ff]";
+                  const icon = isCrit ? <i className="fas fa-circle-exclamation text-[#ff8a8a]" /> :
+                    isWarn ? <i className="fas fa-triangle-exclamation text-[#fcde8a]" /> :
+                    <i className="fas fa-circle-info text-[#6fb3ff]" />;
+                  return (
+                <div key={a.id}
+                      className={`px-3 py-3 border-b border-[#1a1a1a] text-[11px] cursor-pointer hover:bg-[#131313] transition-colors flex items-start gap-2.5 ${rowCls}`}
                   onClick={() => { setAlertDetail(a.id); setAlertsOpen(false); }}
                   title="Открыть полное описание">
-                  <div className="flex items-start gap-2">
-                    <span className="mt-0.5">{a.type === "critical" ? <i className="fas fa-circle-exclamation" /> : a.type === "warning" ? <i className="fas fa-triangle-exclamation" /> : <i className="fas fa-circle-info" />}</span>
-                    <div className="flex-1"><div className="text-[#ddd] font-bold">{stripAlertMarkup(a.title || a.text) || "Без названия"}</div><div className="text-[#666] text-[9px] mt-0.5">{a.author} · {mskTime(a.createdAt)}</div></div>
-                  </div>
+                      <div className="mt-0.5 flex shrink-0">{icon}</div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[#ddd] font-bold truncate">{stripAlertMarkup(a.title || a.text) || "Без названия"}</div>
+                        {a.text && (
+                          <div className="text-[#666] text-[9px] mt-0.5 truncate opacity-85">{stripAlertMarkup(a.text)}</div>
+                        )}
+                        <div className="text-[#555] text-[9px] mt-1.5 flex items-center gap-1.5">
+                          <span className="text-[#777]">{a.author}</span>
+                          <span className="text-[#444]">·</span>
+                          <span className="text-[#666] font-mono">{mskTime(a.createdAt)}</span>
+                          <span className={`ml-auto text-[9px] px-1.5 py-0 border rounded font-bold ${a.active ? "border-[#0a7a2a] text-[#6f6]" : "border-[#333] text-[#555]"}`}>
+                            {a.active ? "активно" : "скрыто"}
+                          </span>
+                        </div>
+                      </div>
                 </div>
-              ))
+              );
+            })}
+            {can("alerts.manage") && (
+              <div className="border-t border-[#1a1a1a] bg-[#0c0c0c] px-3 py-2.5">
+                <button className="gid-btn gid-btn-sm gid-btn-primary w-full" onClick={() => { setAlertsOpen(false); setAdminOpen(true); }}>
+                  <i className="fas fa-shield-halved" /> В админ-панель
+                </button>
+              </div>
             )}
           </div>
+            )
+            }
+        </div>
         </div>
       )}
 
@@ -518,7 +571,7 @@ const can = useCallback((action: Action) => canWith(caps, action), [caps]);
         </DraggableModal>
       )}
       {dutyOpen && <DutyModal me={me} presetRole={dutyOpen} onUpdate={updateMe} onClose={() => setDutyOpen(null)} changeOwnPassword={changeOwnPassword} opError={opError} opNotice={opNotice} clearOpFeedback={clearOpFeedback} />}
-      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} version={GID_VERSION} />}
       {statsOpen && can("stats.view") && <StatsModal state={state} alerts={alerts} onClose={() => setStatsOpen(false)} />}
       {adminOpen && can("admin.panel") && (
         <AdminPanel role={role!} caps={caps ?? []} actorName={me.name} stations={state.stations} trains={state.trains} users={users} alerts={alerts}

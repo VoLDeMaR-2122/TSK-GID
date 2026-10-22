@@ -7,7 +7,6 @@ class WSClient {
   private sock: WebSocket | null = null;
   private handlers = new Map<string, Set<Handler>>();
   private queue: Msg[] = [];
-  private clientId: string | null = null;
   private reconnectTimer: number | null = null;
   private attempts = 0;
   private url = "";
@@ -53,10 +52,6 @@ class WSClient {
         return;
       }
 
-      if (m.kind === "hello") {
-        this.clientId = String(m.clientId || "");
-      }
-
       this.dispatch(m);
     };
 
@@ -94,10 +89,6 @@ class WSClient {
   send(m: Msg) {
     this.init();
     this.raw(m);
-  }
-
-  getClientId() {
-    return this.clientId;
   }
 
   on(kind: string, h: Handler) {

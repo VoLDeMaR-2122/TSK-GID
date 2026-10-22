@@ -5,21 +5,22 @@ import DraggableModal from "./DraggableModal";
 
 interface Props { state: GidState; alerts: Alert[]; onClose: () => void; }
 
+function Stat({ label, value, color }: { label: string; value: number | string; color?: string }) {
+  return (
+    <div className="bg-[#0d0d0d] border border-[#222] rounded p-3 text-center">
+      <div className="text-2xl font-bold" style={{ color: color || "#0f0" }}>{value}</div>
+      <div className="text-[9px] text-[#666] uppercase tracking-wider mt-1">{label}</div>
+    </div>
+  );
+}
+
 export default function StatsModal({ state, alerts, onClose }: Props) {
   const byCat: Record<string, number> = {};
   state.trains.forEach((t) => { byCat[t.category] = (byCat[t.category] || 0) + 1; });
 
   const totalOps = state.trains.reduce((s, t) => s + t.stops.length, 0);
   const inTransit = state.trains.filter((t) => t.stops.some((s) => s.arr && !s.dep)).length;
-  const finished = state.trains.filter((t) => t.stops.length && !t.stops[t.stops.length - 1].dep && t.stops[t.stops.length - 1].arr).length;
   const activeAlerts = alerts.filter((a) => a.active).length;
-
-  const Stat = ({ label, value, color }: { label: string; value: number | string; color?: string }) => (
-    <div className="bg-[#0d0d0d] border border-[#222] rounded p-3 text-center">
-      <div className="text-2xl font-bold" style={{ color: color || "#0f0" }}>{value}</div>
-      <div className="text-[9px] text-[#666] uppercase tracking-wider mt-1">{label}</div>
-    </div>
-  );
 
   return (
     <DraggableModal title={<><i className="fas fa-chart-column" /> Статистика участка</>} width={520} onClose={onClose}
